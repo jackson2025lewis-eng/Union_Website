@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LSA Global Registry - Sign Up</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <style>
+        .form-step { display: none; }
+        .form-step.active { display: block; animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        .role-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px; }
+        .role-card { 
+            background: var(--color-bg-light); border: 2px solid var(--color-border);
+            padding: 30px 20px; border-radius: var(--border-radius-md); 
+            cursor: pointer; transition: all 0.3s ease; text-align: center; 
+        }
+        .role-card:hover { border-color: var(--color-primary); box-shadow: 0 4px 12px rgba(191, 10, 48, 0.1); transform: translateY(-3px); }
+        .role-card i { font-size: 3rem; color: var(--color-primary); margin-bottom: 15px; }
+        .role-card h3 { color: var(--color-bg-dark); }
+        
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        @media(max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .role-cards { grid-template-columns: 1fr; } }
+        
+        .field-group { margin-bottom: 15px; text-align: left; }
+        .field-group label { display: block; font-weight: 600; margin-bottom: 6px; color: var(--color-bg-dark); font-size: 0.9rem; }
+        .field-group input, .field-group select { 
+            width: 100%; padding: 12px; border: 1px solid var(--color-border); 
+            border-radius: var(--border-radius-sm); font-family: var(--font-main); 
+        }
+        .field-group input:focus, .field-group select:focus { outline: none; border-color: var(--color-primary); }
+        
+        .password-reqs { font-size: 0.85rem; color: var(--color-text-muted); text-align: left; margin-bottom: 20px; line-height: 1.4; padding: 15px; background: var(--color-bg-light); border-left: 3px solid var(--color-secondary); border-radius: 4px; }
+        .req-item { display: flex; align-items: center; gap: 5px; }
+        .req-item i { color: var(--color-text-muted); }
+        .req-item.valid i { color: #12b76a; }
+        .req-item.valid { color: #12b76a; }
+    </style>
+</head>
+<body class="dashboard-body">
+
+    <!-- Header -->
+    <header class="header">
+        <a href="index.html" class="logo-container">
+            <img src="images/logo.png" alt="LSA Logo Left" class="logo">
+        </a>
+        <nav class="navbar">
+            <ul class="nav-links">
+                <li><a href="index.html">Home</a></li>
+                <li><a href="dashboard.html">Back</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="dashboard-container">
+        <div class="dashboard-card" style="max-width: 750px; padding: 40px;">
+            
+            <!-- STEP 1: Account Security -->
+            <div id="step-1" class="form-step active">
+                <div class="secure-icon"><i class='bx bx-shield-quarter'></i></div>
+                <h2 class="dashboard-title" style="font-size: 1.8rem;">Create Secure Account</h2>
+                <p class="dashboard-text" style="margin-bottom: 20px;">Enter your email and create a highly secure password for your Global Registry profile.</p>
+                
+                <div class="access-form">
+                    <div class="field-group">
+                        <label>Email Address</label>
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <i class='bx bx-envelope'></i>
+                            <input type="email" id="su-email" placeholder="student@example.com" class="access-input">
+                        </div>
+                    </div>
+                    
+                    <div class="field-group" style="margin-top: 20px;">
+                        <label>Create Password</label>
+                        <div class="input-group" style="margin-bottom: 0;">
+                            <i class='bx bx-lock-alt'></i>
+                            <input type="password" id="su-password" placeholder="Create a strong password..." class="access-input" onkeyup="checkPassword()">
+                        </div>
+                    </div>
+
+                    <div class="password-reqs">
+                        <strong>Password must contain at least:</strong>
+                        <div class="req-item" id="req-lower"><i class='bx bx-x'></i> One lowercase letter (a-z)</div>
+                        <div class="req-item" id="req-upper"><i class='bx bx-x'></i> One uppercase letter (A-Z)</div>
+                        <div class="req-item" id="req-number"><i class='bx bx-x'></i> One number (0-9)</div>
+                        <div class="req-item" id="req-special"><i class='bx bx-x'></i> One special character (@$!%*?&)</div>
+                    </div>
+
+                    <button class="btn btn-primary dashboard-btn" id="btn-next-1" disabled style="opacity: 0.5; cursor: not-allowed;" onclick="goToStep(2)">Proceed to Verification <i class='bx bx-right-arrow-alt'></i></button>
+                    <p style="margin-top: 15px; font-size: 0.9rem; color: var(--color-text-muted);">Already have an account? <a href="login.html" style="color: var(--color-primary); font-weight: bold;">Login</a></p>
+                </div>
+            </div>
+
+            <!-- STEP 2: Role Selection -->
+            <div id="step-2" class="form-step">
+                <h2 class="dashboard-title" style="font-size: 1.8rem;">Select Membership Typology</h2>
+                <p class="dashboard-text">Please classify your registry status to load the correct database schema.</p>
+                
+                <div class="role-cards">
+                    <div class="role-card" onclick="selectRole('student')">
+                        <i class='bx bxs-graduation'></i>
+                        <h3>Current Student</h3>
+                        <p style="font-size: 0.9rem; color: var(--color-text-muted); margin-top: 10px;">Select this if you are actively enrolled in an academic program.</p>
+                    </div>
+                    <div class="role-card" onclick="selectRole('alumni')">
+                        <i class='bx bxs-briefcase'></i>
+                        <h3>Alumni</h3>
+                        <p style="font-size: 0.9rem; color: var(--color-text-muted); margin-top: 10px;">Select this if you have successfully graduated from the university.</p>
+                    </div>
+                </div>
+                <button class="btn btn-secondary" style="margin-top: 30px;" onclick="goToStep(1)"><i class='bx bx-left-arrow-alt'></i> Back</button>
+            </div>
+
+            <!-- STEP 3: Student Form -->
+            <div id="step-student" class="form-step">
+                <h2 class="dashboard-title" style="font-size: 1.8rem;">Student Verification Form</h2>
+                <p class="dashboard-text" style="font-size: 0.9rem;">Complete the official database fields below.</p>
+                
+                <form onsubmit="finishSignup(event)">
+                    <div class="form-grid">
+                        <div class="field-group"><label>Full Name</label><input type="text" required></div>
+                        <div class="field-group"><label>Date of Birth</label><input type="date" required></div>
+                        <div class="field-group"><label>Passport Number</label><input type="text" required></div>
+                        <div class="field-group"><label>College ID (Alphanumeric)</label><input type="text" pattern="[a-zA-Z0-9]+" title="Only letters and numbers allowed" required></div>
+                        <div class="field-group"><label>Course of Study</label><input type="text" required></div>
+                        <div class="field-group"><label>Duration of Study</label><input type="text" placeholder="e.g. 4 Years" required></div>
+                        <div class="field-group"><label>Year of Admission</label><input type="number" placeholder="YYYY" required></div>
+                        <div class="field-group"><label>Expected Year of Graduation</label><input type="number" placeholder="YYYY" required></div>
+                        <div class="field-group" style="grid-column: 1 / -1;"><label>Current Position (if any)</label><input type="text"></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 20px;">
+                        <button type="button" class="btn btn-secondary" onclick="goToStep(2)"><i class='bx bx-left-arrow-alt'></i> Back</button>
+                        <button type="submit" class="btn btn-primary"><i class='bx bx-check-shield'></i> Submit Record</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- STEP 3: Alumni Form -->
+            <div id="step-alumni" class="form-step">
+                <h2 class="dashboard-title" style="font-size: 1.8rem;">Alumni Verification Form</h2>
+                <p class="dashboard-text" style="font-size: 0.9rem;">Complete the official alumni database fields below.</p>
+                
+                <form onsubmit="finishSignup(event)">
+                    <div class="form-grid">
+                        <div class="field-group"><label>Full Name</label><input type="text" required></div>
+                        <div class="field-group"><label>Date of Birth</label><input type="date" required></div>
+                        <div class="field-group"><label>Passport Number</label><input type="text" required></div>
+                        <div class="field-group"><label>College ID (Alphanumeric)</label><input type="text" pattern="[a-zA-Z0-9]+" required></div>
+                        <div class="field-group"><label>Position Served</label><input type="text" required></div>
+                        <div class="field-group"><label>Graduation Date</label><input type="date" required></div>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; margin-top: 30px;">
+                        <button type="button" class="btn btn-secondary" onclick="goToStep(2)"><i class='bx bx-left-arrow-alt'></i> Back</button>
+                        <button type="submit" class="btn btn-primary"><i class='bx bx-check-shield'></i> Submit Record</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- STEP 4: Success -->
+            <div id="step-success" class="form-step">
+                <div class="secure-icon" style="background: rgba(18, 183, 106, 0.1); color: #12b76a;"><i class='bx bx-check-circle'></i></div>
+                <h2 class="dashboard-title" style="font-size: 1.8rem; margin-bottom: 10px;">Registry Creation Pending</h2>
+                <p class="dashboard-text">Your security details and record information have been temporarily saved on this browser.<br>An administrator will verify your information and assign an Auto-ID shortly.</p>
+                <a href="login.html" class="btn btn-primary dashboard-btn"><i class='bx bx-log-in'></i> Proceed to Login</a>
+            </div>
+
+        </div>
+    </div>
+
+    <footer style="text-align: center; padding: 30px 0 20px; width: 100%; margin-top: auto;">
+        <p style="font-size: 0.85rem; letter-spacing: 2px; text-transform: uppercase; color: var(--color-text-muted); margin: 0; font-weight: 600; font-family: 'Outfit', sans-serif;">In Union Strong Success is Sure</p>
+    </footer>
+
+    <!-- Scripts for Multi-step Form Logic -->
+    <script>
+        function checkPassword() {
+            const pwd = document.getElementById('su-password').value;
+            const email = document.getElementById('su-email').value;
+            const btn = document.getElementById('btn-next-1');
+            
+            const hasLower = /[a-z]/.test(pwd);
+            const hasUpper = /[A-Z]/.test(pwd);
+            const hasNumber = /[0-9]/.test(pwd);
+            const hasSpecial = /[@$!%*?&#^()_\-+=\[\]{}:;"'<>,.|\\/]/.test(pwd);
+            
+            updateReq('req-lower', hasLower);
+            updateReq('req-upper', hasUpper);
+            updateReq('req-number', hasNumber);
+            updateReq('req-special', hasSpecial);
+            
+            // Basic email validation regex
+            const validEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+
+            if (hasLower && hasUpper && hasNumber && hasSpecial && validEmail) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+            } else {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'not-allowed';
+            }
+        }
+        
+        function updateReq(id, valid) {
+            const el = document.getElementById(id);
+            if (valid) {
+                el.classList.add('valid');
+                el.querySelector('i').classList.replace('bx-x', 'bx-check');
+            } else {
+                el.classList.remove('valid');
+                el.querySelector('i').classList.replace('bx-check', 'bx-x');
+            }
+        }
+        
+        // Setup realtime email check to unlock button if passport criteria already met
+        document.getElementById('su-email').addEventListener('keyup', checkPassword);
+
+        function goToStep(stepNumber) {
+            document.querySelectorAll('.form-step').forEach(el => el.classList.remove('active'));
+            if (stepNumber === 1 || stepNumber === 2) {
+                document.getElementById('step-' + stepNumber).classList.add('active');
+            }
+        }
+
+        function selectRole(role) {
+            document.querySelectorAll('.form-step').forEach(el => el.classList.remove('active'));
+            if (role === 'student') {
+                document.getElementById('step-student').classList.add('active');
+            } else if (role === 'alumni') {
+                document.getElementById('step-alumni').classList.add('active');
+            }
+        }
+
+        function finishSignup(e) {
+            e.preventDefault(); 
+            
+            const email = document.getElementById('su-email').value;
+            const password = document.getElementById('su-password').value;
+            
+            localStorage.setItem('lsa_auth_email', email);
+            localStorage.setItem('lsa_auth_password', password);
+            
+            // Extract the user data from the active form
+            const activeForm = document.querySelector('.form-step.active form');
+            if (activeForm) {
+                const formData = {};
+                const role = document.getElementById('step-student').classList.contains('active') ? 'Current Student' : 'Alumni';
+                formData['Membership Typology'] = role;
+                formData['Email Address'] = email;
+
+                const inputs = activeForm.querySelectorAll('input');
+                inputs.forEach(input => {
+                    if (input.value && input.previousElementSibling && input.previousElementSibling.tagName === 'LABEL') {
+                        const label = input.previousElementSibling.innerText;
+                        formData[label] = input.value;
+                    }
+                });
+                localStorage.setItem('lsa_user_data', JSON.stringify(formData));
+            }
+            
+            document.querySelectorAll('.form-step').forEach(el => el.classList.remove('active'));
+            document.getElementById('step-success').classList.add('active');
+        }
+    </script>
+</body>
+</html>
