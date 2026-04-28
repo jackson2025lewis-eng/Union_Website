@@ -10,10 +10,26 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Serve current directory static frontend files
+// Serve static files from root directory
 app.use(express.static(__dirname));
+app.use('/styles.css', express.static(path.join(__dirname, 'styles.css')));
+app.use('/script.js', express.static(path.join(__dirname, 'script.js')));
+app.use('/images', express.static(path.join(__dirname, 'images')));
+
+// Serve index.html at root
 app.get('/', (req, res) => {
     res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Serve other HTML pages
+app.get('/dashboard', (req, res) => {
+    res.sendFile(path.join(__dirname, 'Dashboard.html'));
+});
+app.get('/signup', (req, res) => {
+    res.sendFile(path.join(__dirname, 'signup.html'));
+});
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(__dirname, 'login.html'));
 });
 
 // DB Connection Settings

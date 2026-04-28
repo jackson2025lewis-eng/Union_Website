@@ -1,15 +1,13 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>LSA Global Registry - Login</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
-        rel="stylesheet">
-    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
     <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
     <style>
         .profile-list {
@@ -21,86 +19,40 @@
             padding: 20px;
             border: 1px solid var(--color-border);
         }
-
         .profile-list li {
             padding: 12px 0;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+            border-bottom: 1px solid rgba(0,0,0,0.05);
             display: flex;
             flex-direction: column;
             gap: 4px;
         }
-
         .profile-list li:last-child {
             border-bottom: none;
         }
-
         .profile-list li strong {
             color: var(--color-bg-dark);
             font-size: 0.85rem;
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
-
         .profile-list li span {
             color: var(--color-text-main);
             font-size: 1.1rem;
             font-weight: 500;
         }
-
+        
         /* Layout logic to swap forms */
-        #profile-section {
-            display: none;
-            animation: fadeIn 0.4s ease;
-        }
-
-        #login-form-section {
-            display: block;
-            animation: fadeIn 0.4s ease;
-        }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        /* Marquee styles for scrolling text */
-        .marquee-container {
-            width: 100%;
-            overflow: hidden;
-            white-space: nowrap;
-        }
-
-        .marquee-text {
-            display: inline-block;
-            padding-left: 100%;
-            animation: marquee 12s linear infinite;
-        }
-
-        @keyframes marquee {
-            0% {
-                transform: translate(0, 0);
-            }
-
-            100% {
-                transform: translate(-100%, 0);
-            }
-        }
+        #profile-section { display: none; animation: fadeIn 0.4s ease; }
+        #login-form-section { display: block; animation: fadeIn 0.4s ease; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
-
 <body class="dashboard-body">
 
     <!-- Header -->
     <header class="header">
         <a href="index.html" class="logo-container">
-            <img src="images/logo.png" alt="LSA Logo Left" class="logo">
+            <img src="/images/logo.png" alt="LSA Logo Left" class="logo">
         </a>
         <nav class="navbar">
             <ul class="nav-links">
@@ -113,225 +65,86 @@
     <!-- Main Layout -->
     <div class="dashboard-container">
         <div class="dashboard-card" style="max-width: 600px; padding: 40px;">
-
+            
             <!-- SECTION 1: LOGIN FORM -->
             <div id="login-form-section">
                 <div class="secure-icon"><i class='bx bx-user-circle'></i></div>
-                <h2 class="dashboard-title marquee-container" style="font-size: 1.8rem; text-transform: uppercase;">
-                    <span class="marquee-text">membership login</span>
-                </h2>
-                <p class="dashboard-text">Enter your registered email and secure password to
-                    access your official membership records.</p>
-
-                <form id="loginForm" class="access-form">
+                <h2 class="dashboard-title" style="font-size: 1.8rem;">Member Login</h2>
+                <p class="dashboard-text">Enter your registered email and secure password to access your official database records.</p>
+                
+                <form id="loginForm" class="access-form" onsubmit="handleLogin(event)">
                     <div style="text-align: left; margin-bottom: 20px;">
                         <div class="input-group" style="margin-bottom: 0;">
                             <i class='bx bx-envelope'></i>
-                            <input type="email" id="login-email" placeholder="Email Address" class="access-input"
-                                required>
+                            <input type="email" id="login-email" placeholder="Email Address" class="access-input" required>
                         </div>
                     </div>
-
+                    
                     <div style="text-align: left; margin-bottom: 20px;">
                         <div class="input-group" style="margin-bottom: 0;">
                             <i class='bx bx-lock-alt'></i>
-                            <input type="password" id="login-password" placeholder="Password" class="access-input"
-                                required>
+                            <input type="password" id="login-password" placeholder="Password" class="access-input" required>
                         </div>
                     </div>
-
-                    <p id="login-error"
-                        style="color: var(--color-primary); display: none; font-weight: 500; margin-bottom: 15px;">
-                        Invalid Email or Password. Please try again.</p>
-
-                    <button type="submit" class="btn btn-primary dashboard-btn"><i class='bx bx-log-in-circle'></i>
-                        Access Registry Account</button>
                     
-                    <div style="text-align: center; margin-top: 15px;">
-                        <a href="#" id="forgot-password-link" style="color: var(--color-text-muted); font-size: 0.9rem; font-weight: 500; text-decoration: underline;">Forgot Password?</a>
-                    </div>
-                </form>
-            </div>
+                    <p id="login-error" style="color: var(--color-primary); display: none; font-weight: 500; margin-bottom: 15px;">Invalid Email or Password. Please try again.</p>
 
-            <!-- SECTION 1.5: OTP VERIFICATION -->
-            <div id="otp-section" style="display: none; animation: fadeIn 0.4s ease;">
-                <div class="secure-icon" style="background: rgba(18, 183, 106, 0.1); color: #12b76a;"><i class='bx bx-shield-quarter'></i></div>
-                <h2 class="dashboard-title" style="font-size: 1.8rem; margin-bottom: 10px;">2-Step Verification</h2>
-                <p class="dashboard-text" style="margin-bottom: 30px;">For your security, we've sent an access code to your email.</p>
-                
-                <div class="access-form" style="text-align: center; margin-bottom: 30px;">
-                    <p style="margin-bottom: 15px; font-weight: 600; color: var(--color-bg-dark);">Enter the LSA Code</p>
-                    <div style="display: flex; justify-content: center; align-items: center; gap: 10px; margin-bottom: 20px;">
-                        <span class="otp-dash" style="font-size: 1.5rem; font-weight: bold; color: var(--color-primary);">LSA-</span>
-                        <input type="text" id="otp-input" class="access-input" style="width: 150px; text-align: center; font-size: 1.2rem; letter-spacing: 4px;" maxlength="4" placeholder="1234">
-                    </div>
-                    <p id="otp-error" style="color: var(--color-primary); display: none; margin-bottom: 15px; font-weight: 500;"></p>
-                    <button class="btn btn-primary dashboard-btn" id="btn-verify-otp"><i class='bx bx-check-shield'></i> Verify Code</button>
-                    <p style="margin-top: 15px; font-size: 0.9rem; color: var(--color-text-muted);">
-                        Didn't receive the code? <a href="#" id="resend-otp-link" style="color: var(--color-bg-dark); font-weight: bold; text-decoration: underline;">Resend</a>
-                    </p>
-                </div>
+                    <button type="submit" class="btn btn-primary dashboard-btn"><i class='bx bx-log-in-circle'></i> Access Registry Account</button>
+                </form>
             </div>
 
             <!-- SECTION 2: PROFILE OVERVIEW -->
             <div id="profile-section">
-                <div class="secure-icon" style="background: rgba(18, 183, 106, 0.1); color: #12b76a;"><i
-                        class='bx bx-user-check'></i></div>
-                <h2 class="dashboard-title marquee-container" style="font-size: 1.8rem; margin-bottom: 10px;"
-                    id="welcome-header">
-                    <span class="marquee-text">Welcome to Liberian Students Association Database</span>
-                </h2>
-                <p class="dashboard-text" style="margin-bottom: 30px;">Below are your secure details from LSA database.
-                </p>
-
+                <div class="secure-icon" style="background: rgba(18, 183, 106, 0.1); color: #12b76a;"><i class='bx bx-user-check'></i></div>
+                <h2 class="dashboard-title" style="font-size: 1.8rem; margin-bottom: 10px;">Official Database Record</h2>
+                <p class="dashboard-text" style="margin-bottom: 30px;">Your secure details from the LSA Global Registry are displayed below.</p>
+                
                 <div id="profile-data" style="text-align: left; margin-bottom: 30px;">
                     <!-- Javascript will inject LIs here -->
                 </div>
-
-                <button class="btn btn-blue dashboard-btn" id="btn-download"><i class='bx bx-download'></i>
-                    Download Official Record PDF/TXT</button>
-                <a href="#" id="btn-logout" class="btn btn-secondary dashboard-btn"
-                    style="margin-top: 15px; color: var(--color-text-muted); border-color: transparent;"><i class='bx bx-log-out'></i> Secure
-                    Logout</a>
+                
+                <button class="btn btn-blue dashboard-btn" onclick="downloadRecord()"><i class='bx bx-download'></i> Download Official Record PDF/TXT</button>
+                <a href="index.html" class="btn btn-secondary dashboard-btn" style="margin-top: 15px; color: var(--color-text-muted); border-color: transparent;" onclick="sessionStorage.removeItem('lsa_auth_granted')"><i class='bx bx-log-out'></i> Secure Logout</a>
             </div>
 
         </div>
     </div>
 
-    <footer style="text-align: center; padding: 30px 0 20px; width: 100%; margin-top: auto;">
-        <p style="font-size: 0.85rem; letter-spacing: 2px; text-transform: uppercase; color: var(--color-text-muted); margin: 0; font-weight: 600; font-family: 'Outfit', sans-serif;">In Union Strong Success is Sure</p>
-    </footer>
-
     <!-- Script Logic -->
-    <script type="module">
-        import { auth } from './firebase-config.js';
-        import { signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-auth.js";
-
-        const loginForm = document.getElementById('loginForm');
-        const loginError = document.getElementById('login-error');
-        const forgotPasswordLink = document.getElementById('forgot-password-link');
-        
-        const loginSection = document.getElementById('login-form-section');
-        const otpSection = document.getElementById('otp-section');
-        const profileSection = document.getElementById('profile-section');
-
-        const btnVerifyOtp = document.getElementById('btn-verify-otp');
-        const otpError = document.getElementById('otp-error');
-        const btnLogout = document.getElementById('btn-logout');
-        const btnDownload = document.getElementById('btn-download');
-
-        let currentIdToken = null;
-        let currentUserEmail = null;
-
-        // 1. Firebase Email/Password Login
-        loginForm.addEventListener('submit', async (e) => {
+    <script>
+        function handleLogin(e) {
             e.preventDefault();
-            const email = document.getElementById('login-email').value;
-            const password = document.getElementById('login-password').value;
             
-            try {
-                loginError.style.display = 'none';
-                const userCredential = await signInWithEmailAndPassword(auth, email, password);
-                const user = userCredential.user;
+            const savedEmail = localStorage.getItem('lsa_auth_email');
+            const savedPassword = localStorage.getItem('lsa_auth_password');
+            
+            const inputEmail = document.getElementById('login-email').value;
+            const inputPassword = document.getElementById('login-password').value;
+            const errorMsg = document.getElementById('login-error');
+
+            if (savedEmail && savedPassword && inputEmail === savedEmail && inputPassword === savedPassword) {
+                // Success
+                errorMsg.style.display = 'none';
+                document.getElementById('login-form-section').style.display = 'none';
+                document.getElementById('profile-section').style.display = 'block';
                 
-                currentIdToken = await user.getIdToken();
-                currentUserEmail = email;
-
-                loginSection.style.display = 'none';
-                otpSection.style.display = 'block';
-
-                await sendOTP();
-            } catch (error) {
-                console.error("Firebase Auth Error:", error);
-                loginError.innerText = error.message;
-                loginError.style.display = 'block';
-            }
-        });
-
-        // 2. Forgot Password Logic
-        forgotPasswordLink.addEventListener('click', async (e) => {
-            e.preventDefault();
-            const email = document.getElementById('login-email').value;
-            if (!email) {
-                alert("Please enter your email address in the field above to reset your password.");
-                return;
-            }
-            try {
-                await sendPasswordResetEmail(auth, email);
-                alert("A password reset link has been sent to your email.");
-            } catch (error) {
-                alert("Error sending reset email: " + error.message);
-            }
-        });
-
-        // 3. Send OTP to Vercel Backend
-        async function sendOTP() {
-            try {
-                const response = await fetch('/api/send-otp', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${currentIdToken}`
-                    },
-                    body: JSON.stringify({ email: currentUserEmail })
-                });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.error || "Failed to send OTP");
-                console.log("OTP Sent successfully");
-            } catch (error) {
-                console.error("OTP Send Error:", error);
-                otpError.innerText = error.message;
-                otpError.style.display = 'block';
+                loadProfileData();
+            } else {
+                // Failure
+                errorMsg.style.display = 'block';
             }
         }
 
-        document.getElementById('resend-otp-link').addEventListener('click', (e) => {
-            e.preventDefault();
-            otpError.style.display = 'none';
-            sendOTP();
-        });
-
-        // 4. Verify OTP
-        btnVerifyOtp.addEventListener('click', async () => {
-            const code = 'LSA' + document.getElementById('otp-input').value;
-            try {
-                otpError.style.display = 'none';
-                const response = await fetch('/api/verify-otp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ email: currentUserEmail, code: code })
-                });
-                const data = await response.json();
-                if (!response.ok) throw new Error(data.error || "Invalid OTP");
-
-                otpSection.style.display = 'none';
-                profileSection.style.display = 'block';
-                loadProfileData();
-            } catch (error) {
-                otpError.innerText = error.message;
-                otpError.style.display = 'block';
-            }
-        });
-
-        // 5. Logout
-        btnLogout.addEventListener('click', async (e) => {
-            e.preventDefault();
-            await signOut(auth);
-            window.location.href = 'index.html';
-        });
-
-        // Profile Data logic (from localStorage for now, later fetched from DB)
         function loadProfileData() {
             const userDataStr = localStorage.getItem('lsa_user_data');
             if (userDataStr) {
                 const userData = JSON.parse(userDataStr);
-                const fullName = userData['Full Name'] || '';
-                document.getElementById('welcome-header').innerHTML = `<span class="marquee-text">Welcome to Liberian Students Association Database ${fullName}</span>`;
-
                 let html = '<ul class="profile-list">';
+                
                 for (let key in userData) {
                     html += `<li><strong>${key}</strong> <span>${userData[key]}</span></li>`;
                 }
+                
                 html += '</ul>';
                 document.getElementById('profile-data').innerHTML = html;
             } else {
@@ -339,35 +152,37 @@
             }
         }
 
-        btnDownload.addEventListener('click', () => {
+        function downloadRecord() {
             const userDataStr = localStorage.getItem('lsa_user_data');
-            if (!userDataStr) return;
+            if(!userDataStr) return;
             const userData = JSON.parse(userDataStr);
-
+            
             let text = "==============================================\n";
-            text += " LSA GLOBAL REGISTRY - OFFICIAL MEMBER RECORD \n";
-            text += "==============================================\n\n";
-            text += "CONFIDENTIAL - DO NOT SHARE\n";
-            text += "Timestamp: " + new Date().toLocaleString() + "\n\n";
-
-            for (let key in userData) {
+            text +=    " LSA GLOBAL REGISTRY - OFFICIAL MEMBER RECORD \n";
+            text +=    "==============================================\n\n";
+            text +=    "CONFIDENTIAL - DO NOT SHARE\n";
+            text +=    "Timestamp: " + new Date().toLocaleString() + "\n\n";
+            
+            for(let key in userData) {
                 text += `${key.toUpperCase().padEnd(30, ' ')} : ${userData[key]}\n`;
             }
-
+            
             text += "\n==============================================\n";
             text += "Verified by Liberia Students Association.\n";
 
+            // Create a blob and simulate auto-download
             const blob = new Blob([text], { type: 'text/plain' });
             const url = URL.createObjectURL(blob);
+            
             const a = document.createElement('a');
             a.href = url;
             a.download = "LSA_Official_Record.txt";
-            document.body.appendChild(a);
+            document.body.appendChild(a); // append to body required for FF
             a.click();
             document.body.removeChild(a);
+            
             URL.revokeObjectURL(url);
-        });
+        }
     </script>
 </body>
-
 </html>
