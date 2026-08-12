@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Leadership of the KIIT Chapter of the Liberian Students Union in Odisha." />
+    <title>KIIT Chapter Leadership - LSUO</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .bio-card {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 32px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        margin-bottom: 40px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .bio-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.15);
+      }
+      @media (min-width: 768px) {
+        .bio-card {
+          flex-direction: row;
+          align-items: flex-start;
+        }
+      }
+      .bio-image-container {
+        flex-shrink: 0;
+        width: 180px;
+        height: 180px;
+        border-radius: 12px;
+        overflow: hidden;
+        background-color: #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #e2e8f0;
+        margin: 0 auto;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      .bio-image-container i {
+        font-size: 5rem;
+        color: #94a3b8;
+      }
+      .bio-content {
+        flex-grow: 1;
+        text-align: center;
+      }
+      @media (min-width: 768px) {
+        .bio-content {
+          text-align: left;
+        }
+      }
+      .bio-name {
+        font-size: 1.8rem;
+        color: #1e293b;
+        margin: 0 0 8px 0;
+      }
+      .bio-role {
+        font-size: 1.1rem;
+        color: #2563eb;
+        font-weight: 600;
+        margin: 0 0 4px 0;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .bio-degree {
+        font-size: 0.95rem;
+        color: #64748b;
+        margin: 0 0 16px 0;
+        font-style: italic;
+      }
+      .bio-description {
+        font-size: 1rem;
+        color: #475569;
+        line-height: 1.6;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="top-bar">
+        <a class="top-email" href="mailto:info@lsuo.org"><i class="fa-regular fa-envelope"></i> info@lsuo.org</a>
+        <div class="top-social" aria-label="Social media links">
+          <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
+          <a href="#" aria-label="WhatsApp"><i class="fa-brands fa-whatsapp"></i></a>
+          <a href="#" aria-label="LinkedIn"><i class="fa-brands fa-linkedin-in"></i></a>
+          <a href="#" aria-label="Website"><i class="fa-solid fa-globe"></i></a>
+        </div>
+      </div>
+      <div class="main-nav-row">
+        <button id="hamburgerBtn" class="hamburger-btn" aria-label="Open Menu">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+        <a class="brand-logo" href="index.html">
+          <img class="brand-icon" src="assets/images/Logo.jpg" alt="LSUO logo" />
+          <span class="brand-name">LSUO</span>
+        </a>
+      </div>
+    </header>
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <a class="brand-logo" href="index.html">
+        <img class="brand-icon" src="assets/images/Logo.jpg" alt="LSUO logo" />
+        <span class="brand-name">LSUO Menu</span>
+      </a>
+      <nav class="main-nav">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">About</a>
+        <div class="nav-dropdown" id="chaptersDropdown">
+          <button class="nav-dropdown-btn nav-link active">Local Chapters <i class="fa-solid fa-chevron-down"></i></button>
+          <div class="nav-dropdown-content">
+            <a href="soa-leadership.html" class="nav-link">SOA Chapter</a>
+            <a href="cv-raman-leadership.html" class="nav-link">CV Raman</a>
+            <a href="kiit-leadership.html" class="nav-link active">KIIT</a>
+          </div>
+        </div>
+        <a href="alumni.html" class="nav-link">Alumni</a>
+        <a href="contact.html" class="nav-link">Contact</a>
+      </nav>
+    </aside>
+
+    <div class="page-shell">
+      <main class="content page-content">
+        <div style="margin-bottom: 20px;">
+          <a href="index.html" style="color: #2563eb; text-decoration: none; font-weight: 600;"><i class="fa-solid fa-arrow-left"></i> Back to Home</a>
+        </div>
+        
+        <section class="intro-card" style="background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 24px; padding: 60px 40px; text-align: center; margin-bottom: 60px; color: white; box-shadow: 0 20px 40px rgba(37, 99, 235, 0.25);">
+          <h2 style="font-size: 3rem; font-family: Georgia, 'Times New Roman', serif; margin: 0; color: #ffffff; line-height: 1.2;">KIIT Chapter</h2>
+        </section>
+
+        <article class="info-card" style="display: flex; flex-direction: column; justify-content: space-between; max-width: 900px; margin: 0 auto 60px auto; box-sizing: border-box; border: 2px solid #2563eb; border-radius: 24px; padding: 40px; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
+          <div>
+            <h3 style="text-align: center; color: #1e40af; margin-bottom: 16px; font-size: 1.6rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 10px;">History of KIIT Chapter</h3>
+            <p style="text-align: justify; font-size: 0.95rem; line-height: 1.6;">
+              The Kalinga Institute of Industrial Technology (KIIT) Chapter has a vibrant history of student engagement.
+              Our members actively participate in international student forums, cultural showcases, and peer mentorship
+              programs to foster growth and unity across the campus community.
+            </p>
+          </div>
+        </article>
+
+        <div style="text-align: center; margin-bottom: 40px;">
+          <h3 style="font-size: 1.8rem; color: #1e293b; font-family: Georgia, 'Times New Roman', serif;">Meet the dedicated students leading KIIT Chapter</h3>
+        </div>
+        <section class="leadership-bios" style="max-width: 900px; margin: 0 auto;">
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/Profile_placeholder.png" alt="President" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name">John Smith</h3>
+              <p class="bio-role">President</p>
+              <p class="bio-degree">B.Tech Mechanical Engineering</p>
+              <p class="bio-description">John leads the KIIT chapter with a focus on student engagement and academic excellence, coordinating activities that foster community growth.</p>
+            </div>
+          </article>
+
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/Profile_placeholder.png" alt="Vice President" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name">Blessing Koffa</h3>
+              <p class="bio-role">Vice President</p>
+              <p class="bio-degree">B.Sc. Biotechnology</p>
+              <p class="bio-description">Blessing ensures seamless communication and record-keeping for the chapter, supporting all internal initiatives and programs.</p>
+            </div>
+          </article>
+
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/Profile_placeholder.png" alt="Secretary General" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name">Joseph Wesseh</h3>
+              <p class="bio-role">Secretary General</p>
+              <p class="bio-degree">Master of Public Health (MPH)</p>
+              <p class="bio-description">Joseph oversees the financial health of the KIIT chapter, managing budgets for events and ensuring transparency in all transactions.</p>
+            </div>
+          </article>
+
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/Profile_placeholder.png" alt="Financial Secretary" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name">Patience Browne</h3>
+              <p class="bio-role">Financial Secretary</p>
+              <p class="bio-degree">B.Sc. Nursing</p>
+              <p class="bio-description">Patience manages the financial aspects of the KIIT chapter, ensuring responsible use of funds and maintaining accurate records.</p>
+            </div>
+          </article>
+    </section>
+      </main>
+    </div>
+
+    <footer class="site-footer" style="margin-top: 60px;">
+      <p class="footer-motto">Unity, Excellence, and Service</p>
+      <p>&copy; 2025 Liberian Students Union in Odisha. All rights reserved.</p>
+    </footer>
+
+    <script>
+      const hamburgerBtn = document.getElementById('hamburgerBtn');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+      function toggleSidebar() {
+        sidebar.classList.toggle('open');
+        sidebarOverlay.classList.toggle('active');
+      }
+
+      if(hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+      if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
+
+      const chaptersDropdown = document.getElementById('chaptersDropdown');
+      if(chaptersDropdown) {
+        const btn = chaptersDropdown.querySelector('.nav-dropdown-btn');
+        btn.addEventListener('click', () => {
+          chaptersDropdown.classList.toggle('open');
+        });
+      }
+    </script>
+  </body>
+</html>

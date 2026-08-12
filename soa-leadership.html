@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Leadership of the SOA Chapter of the Liberian Students Union in Odisha." />
+    <title>SOA Chapter Leadership - LSUO</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="style.css" />
+    <style>
+      .bio-card {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: 32px;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        margin-bottom: 40px;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+      .bio-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px -5px rgba(0, 0, 0, 0.15);
+      }
+      @media (min-width: 768px) {
+        .bio-card {
+          flex-direction: row;
+          align-items: flex-start;
+        }
+      }
+      .bio-image-container {
+        flex-shrink: 0;
+        width: 180px;
+        height: 180px;
+        border-radius: 12px;
+        overflow: hidden;
+        background-color: #f1f5f9;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border: 2px solid #e2e8f0;
+        margin: 0 auto;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+      }
+      .bio-image-container i {
+        font-size: 5rem;
+        color: #94a3b8;
+      }
+      .bio-content {
+        flex-grow: 1;
+        text-align: center;
+      }
+      @media (min-width: 768px) {
+        .bio-content {
+          text-align: left;
+        }
+      }
+      .bio-name {
+        font-size: 1.8rem;
+        color: #1e293b;
+        margin: 0 0 8px 0;
+      }
+      .bio-role {
+        font-size: 1.1rem;
+        color: #2563eb;
+        font-weight: 600;
+        margin: 0 0 4px 0;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .bio-degree {
+        font-size: 0.95rem;
+        color: #64748b;
+        margin: 0 0 16px 0;
+        font-style: italic;
+      }
+      .bio-description {
+        font-size: 1rem;
+        color: #475569;
+        line-height: 1.6;
+        margin: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="page-header">
+      <div class="top-bar">
+        <a class="top-email" href="mailto:info@lsuo.org"><i class="fa-regular fa-envelope"></i> info@lsuo.org</a>
+        <div class="top-social" aria-label="Social media links">
+          <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
+          <a href="#" aria-label="WhatsApp"><i class="fa-brands fa-whatsapp"></i></a>
+          <a href="#" aria-label="LinkedIn"><i class="fa-brands fa-linkedin-in"></i></a>
+          <a href="#" aria-label="Website"><i class="fa-solid fa-globe"></i></a>
+        </div>
+      </div>
+      <div class="main-nav-row">
+        <button id="hamburgerBtn" class="hamburger-btn" aria-label="Open Menu">
+          <i class="fa-solid fa-bars"></i>
+        </button>
+        <a class="brand-logo" href="index.html">
+          <img class="brand-icon" src="assets/images/Logo.jpg" alt="LSUO logo" />
+          <span class="brand-name">LSUO</span>
+        </a>
+      </div>
+    </header>
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <aside class="sidebar" id="sidebar">
+      <a class="brand-logo" href="index.html">
+        <img class="brand-icon" src="assets/images/Logo.jpg" alt="LSUO logo" />
+        <span class="brand-name">LSUO Menu</span>
+      </a>
+      <nav class="main-nav">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">About</a>
+        <div class="nav-dropdown" id="chaptersDropdown">
+          <button class="nav-dropdown-btn nav-link active">Local Chapters <i class="fa-solid fa-chevron-down"></i></button>
+          <div class="nav-dropdown-content">
+            <a href="soa-leadership.html" class="nav-link active">SOA Chapter</a>
+            <a href="cv-raman-leadership.html" class="nav-link">CV Raman</a>
+            <a href="kiit-leadership.html" class="nav-link">KIIT</a>
+          </div>
+        </div>
+        <a href="alumni.html" class="nav-link">Alumni</a>
+        <a href="contact.html" class="nav-link">Contact</a>
+      </nav>
+    </aside>
+
+    <div class="page-shell">
+      <main class="content page-content">
+        <div style="margin-bottom: 20px;">
+          <a href="index.html" style="color: #2563eb; text-decoration: none; font-weight: 600;"><i class="fa-solid fa-arrow-left"></i> Back to Home</a>
+        </div>
+        
+        <section class="intro-card" style="background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 24px; padding: 60px 40px; text-align: center; margin-bottom: 60px; color: white; box-shadow: 0 20px 40px rgba(37, 99, 235, 0.25);">
+          <h2 style="font-size: 3rem; font-family: Georgia, 'Times New Roman', serif; margin: 0; color: #ffffff; line-height: 1.2;">SOA Chapter</h2>
+        </section>
+
+        <article class="info-card" style="display: flex; flex-direction: column; justify-content: space-between; max-width: 900px; margin: 0 auto 60px auto; box-sizing: border-box; border: 2px solid #2563eb; border-radius: 24px; padding: 40px; box-shadow: 0 10px 25px rgba(0,0,0,0.05);">
+          <div>
+            <h3 style="text-align: center; color: #1e40af; margin-bottom: 16px; font-size: 1.6rem; border-bottom: 2px solid #bfdbfe; padding-bottom: 10px;">History of SOA Chapter</h3>
+            <p style="text-align: justify; font-size: 0.95rem; line-height: 1.6;">
+              The story of Liberian students at Siksha 'O' Anusandhan (SOA) University is one of courage, perseverance, unity
+              and friendship. It is a story that reminds every Liberian student studying abroad that success is not achieved
+              alone but through determination and mutual support. The journey began on 31 August 2022, when Arison N. Lekpor
+              became the first Liberian student to arrive at SOA University. Soon afterward, his first Liberian brother, Mamadu 
+              all arrived to pursue a Master of Business Administration (MBA).<br> He was followed by Elijah Saseywah,
+              who enrolled in a Master of Science in Agriculture. As the months passed, more Liberian students joined the
+              university, forming a growing family far away from home. Eventually, the Liberian student population at SOA
+              University reached twelve (12) students, equally divided into six men and six women.
+            </p>
+            <h4 style="margin-top: 20px; margin-bottom: 10px; font-size: 1.05rem; color: #334155; text-align: left;">Meet the Estiblish Member of SOA Chapter:</h4>
+            <ul style="text-align: left; font-size: 0.95rem; line-height: 1.6; color: #475569; padding-left: 20px; margin: 0; display: flex; flex-direction: column; gap: 8px;">
+              <li><strong>Arison N. Lekpor</strong> - Pioneer Student, Master of Public Health (MPH)</li>
+              <li><strong>Mamadu Sall</strong> - Master of Business Administration (MBA)</li>
+              <li><strong>Elijah Saseywah</strong> - M.Sc. Agriculture</li>
+              <li><strong>Andrew K. Dean</strong> - President Emeritus, M.Sc. Clinical Psychology</li>
+              <li><strong>Naomi G. Garlo</strong> - Master of Public Health (MPH)</li>
+              <li><strong>Esther Flomo – </strong> - Vice President Emeritus, Master of Public Health (MPH)</li>
+              <li><strong>Samuel G. Gbelah</strong> - M.Sc. Biotechnology</li>
+              <li><strong>Ayouba B. Kamara</strong> – Master of Business Administration (MBA)</li>
+              <li><strong>Princess B. Ola</strong> – Master of Public Health (MPH)</li>
+              <li><strong>Blessing N. Akuma</strong> – Bachelor of Science in Optometry</li>
+              <li><strong>Depeh Young</strong> – Bachelor of Science in Law</li>
+              <li><strong>Maaphin Bility</strong> – Bachelor of Science in Optometry</li>
+            </ul>
+          </div>
+        </article>
+
+        <div style="text-align: center; margin-bottom: 40px;">
+          <h3 style="font-size: 1.8rem; color: #1e293b; font-family: Georgia, 'Times New Roman', serif;">Meet the dedicated students leading SOA Chapter</h3>
+        </div>
+        <section class="leadership-bios" style="max-width: 900px; margin: 0 auto;">
+          <!-- President -->
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/EMCOLE.jpeg" alt="President" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name"> Mr. Edward M. Cole</h3>
+              <p class="bio-role">President</p>
+              <p class="bio-degree">Bachelor of Technology in Electrical Engineering (B.Tech)</p>
+              <p class="bio-description">
+                As the first democratic leader of the SOA Chapter, he is committed to fostering
+                an inclusive environment where all students can thrive academically and personally. His leadership journey
+                began long before becoming prsident, he has consistently demonstrated a passion for student welfare,
+                cultural exchange, and academic excellence.<br> He first served as the <b>Media Director</b>, where he 
+                strengthened communication and promoted the activities of SOA Chapter.<br> His vision for the chapter
+                includes expanding student engagement, enhancing academic support systems, and building a strong community,
+                with such initiatives he was elected as the chapter <b>Secretary General</b>, a role in
+                which he worked closely with the executive commitee to improve coordination, transparency, and organizational
+                effectiveness.<br> These experience prepared him to lead the association with dedication and purpose.
+                Since taken on the position of president through a democratic election, he has been
+                instrumental in implementing unity among members, encouraging active participation, representing the interests
+                of all members before the Administration of SOA University, and organizing programs that benefit and
+                strength the chapter.
+
+            </div>
+          </article>
+
+          <!-- Vice President -->
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/Vice President.jpg" alt="Vice President" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name">Emmanuel Flomo</h3>
+              <p class="bio-role">Vice President</p>
+              <p class="bio-degree">B.Sc. Nursing</p>
+              <p class="bio-description">
+                Emmanuel brings a compassionate and community-focused approach to the chapter's leadership. Serving closely alongside the President, he coordinates various welfare and academic support initiatives. His passion for healthcare and community service translates into his active role in uniting students and organizing meaningful cultural and academic events.
+              </p>
+            </div>
+          </article>
+
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/SOLO.jpg" alt="General Secretary" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name">Mr. Jackson L. Solo II</h3>
+              <p class="bio-role">Secretary General</p>
+              <p class="bio-degree">Bachelor of Computer Application (BCA)</p>
+              <p class="bio-description">
+                As the Secretary General of SOA Chapter, <b>Mr. Solo</b> leadership journey began at the level of <b>All 
+                Liberian Student in Indian (ALSI)</b> where he served as a committee member on Education and Student Welfare Committee.
+                He later became the Student Representative of SOA Chapter at the fourth house of parliament of 
+                All Liberian Student in Indian (ALSI) where he served as the <b>Deputy Speaker</b> of the house representing
+                SOA chapter and Liberians in Odisha at large.<br>
+                 He has been instrumental in streamlining communication between the executive committee and
+                the student body, ensuring that all voices are heard and represented. Since joining the chapter,
+                his organizational skills and dedication to student welfare have made him a pivotal figure in the
+                chapter's success. 
+              </p>
+            </div>
+          </article>
+
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/Secretary.jpg" alt="Moses Kollie, Financial Secretary" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name">Mr. Abraham Daniel</h3>
+              <p class="bio-role">Financial Secretary</p>
+              <p class="bio-degree">B.Sc. Nursing</p>
+              <p class="bio-description">
+                <b>Mr. Daniel</b> is dedicated to promoting academic excellence, passionate student leader and a
+                community servant. He serves as the program coordinator of SEED (Student Empowerment and 
+                Educational Development) where he has been instrumental, with his experienced in financial management,
+                he became the capter Financial Secretary. <br>His respect to the student body and his commitment to
+                transparency and accountability have earned him the trust of his peers. He is inspire positive change
+                through leadership, education, and lifelong leaning.
+              </p>
+            </div>
+          </article>
+
+           
+          <article class="bio-card">
+            <div class="bio-image-container">
+              <img src="assets/images/pre.png" alt="Priscilla N. Suah, Treasurer" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+            </div>
+            <div class="bio-content">
+              <h3 class="bio-name">Miss Priscilla N. Suah</h3>
+              <p class="bio-role">Treasurer</p>
+              <p class="bio-degree">Bachelor of Arts and Bachelor of Law (BALL.B)</p>
+              <p class="bio-description">
+                <b>Mis. Suah</b> is committed to academic excellence, leadership and serving the student community.
+                She oversees the treasury of SOA Chapter, and ensures the safekeeping and strategic disbursement of 
+                chapter funds, maintaining a healthy financial environment that empowers the student body to execute
+                successful cultural and academic events.<br>
+                through this role she have developed strong leadership, organizational, and financial management
+                skills while fostering unity and collaboration within the student community. 
+              </p>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <footer class="site-footer" style="margin-top: 60px;">
+      <p class="footer-motto">Unity, Excellence, and Service</p>
+      <p>&copy; 2025 Liberian Students Union in Odisha. All rights reserved.</p>
+    </footer>
+
+    <script>
+      const hamburgerBtn = document.getElementById('hamburgerBtn');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+      function toggleSidebar() {
+        sidebar.classList.toggle('open');
+        sidebarOverlay.classList.toggle('active');
+      }
+
+      if(hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+      if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
+
+      const chaptersDropdown = document.getElementById('chaptersDropdown');
+      if(chaptersDropdown) {
+        const btn = chaptersDropdown.querySelector('.nav-dropdown-btn');
+        btn.addEventListener('click', () => {
+          chaptersDropdown.classList.toggle('open');
+        });
+      }
+    </script>
+  </body>
+</html>
