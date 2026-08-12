@@ -1,0 +1,26 @@
+{
+  "name": "bus-tracking-system",
+  "version": "1.0.0",
+  "description": "A web-based real-time bus tracking system for students.",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "nodemon server/server.js",
+    "test": "echo \"No test specified\" && exit 1"
+  },
+  "keywords": [
+    "bus",
+    "tracking",
+    "gps",
+    "students"
+  ],
+  "author": "Jack",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "pg": "^8.22.0"
+  }
+}

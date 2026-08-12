@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LSA Global Registry - Secure Access</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+    <link href='https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css' rel='stylesheet'>
+    <style>
+        .dashboard-body.dark-mode {
+            background: radial-gradient(circle at top left, #001a4d, #000a1c);
+            color: #fff;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            border-top: 6px solid var(--color-primary);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+        }
+
+        .glass-panel .dashboard-title {
+            color: #fff;
+        }
+
+        .glass-panel .dashboard-text {
+            color: rgba(255, 255, 255, 0.7);
+        }
+
+        .glass-panel .dashboard-text strong {
+            color: #fff;
+        }
+
+        .glass-panel .access-form {
+            background: transparent;
+            padding: 0;
+            margin-top: 30px;
+        }
+
+        .glass-panel .access-input {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #fff;
+            padding-left: 50px;
+        }
+
+        .glass-panel .access-input::placeholder {
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .otp-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 24px;
+        }
+
+        .otp-box {
+            width: 45px;
+            height: 55px;
+            font-size: 1.5rem;
+            text-align: center;
+            border-radius: var(--border-radius-sm);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(255, 255, 255, 0.05);
+            color: #fff;
+            font-weight: 700;
+            transition: all 0.3s ease;
+        }
+
+        .otp-box:focus {
+            outline: none;
+            border-color: var(--color-primary);
+            box-shadow: 0 0 10px rgba(191, 10, 48, 0.3);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .otp-box:disabled {
+            background: transparent;
+            color: rgba(255, 255, 255, 0.3);
+            border-color: transparent;
+        }
+
+        .otp-dash {
+            color: #fff;
+            font-size: 1.5rem;
+            margin: 0 2px;
+            opacity: 0.5;
+        }
+
+        /* Layout logic to swap forms */
+        #otp-section {
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+
+        #auth-buttons {
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+
+<body class="dashboard-body dark-mode">
+
+    <header class="header"
+        style="background: rgba(0,0,0,0.2); backdrop-filter: blur(10px); border-bottom: 1px solid rgba(255,255,255,0.05); box-shadow: none;">
+        <a href="index.html" class="logo-container">
+            <img src="/images/logo.png" alt="LSA Logo Left" class="logo"
+                style="filter: drop-shadow(0 0 5px rgba(255,255,255,0.2));">
+        </a>
+        <nav class="navbar">
+            <ul class="nav-links">
+                <li><a href="index.html" style="color: #fff;">Back to Home</a></li>
+            </ul>
+        </nav>
+        <div class="logo-container right-logo">
+            <img src="/images/logo.png" alt="LSA Logo Right" class="logo"
+                style="filter: drop-shadow(0 0 5px rgba(255,255,255,0.2));">
+        </div>
+    </header>
+
+    <div class="dashboard-container">
+        <div class="dashboard-card glass-panel">
+            <div class="secure-icon"
+                style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);">
+                <i class='bx bx-lock-alt' style="color: #fff;"></i>
+            </div>
+
+            <h1 class="dashboard-title">Identity Verification</h1>
+
+            <p class="dashboard-text" id="main-desc">
+                Welcome to the <strong>LSA Global Registry</strong>.
+                <br><br>
+                Please verify your indetntity to access the secure membership portal.
+                if you already have an account, please <b>Login</b>. <br>
+                New user, please provide a valid email address to receive your verification
+            </p>
+
+            <div class="access-form">
+                <div id="identity-section">
+                    <div class="input-group">
+                        <i class='bx bx-envelope' style="color: rgba(255,255,255,0.5);"></i>
+                        <input type="email" id="emailInput" placeholder="Enter Email Address" class="access-input"
+                            onkeyup="validateIdentity()">
+                    </div>
+                    <p id="identity-error"
+                        style="color: var(--color-primary); display: none; margin-bottom: 15px; font-weight: 500;"></p>
+                    <button class="btn btn-primary dashboard-btn" id="btn-send-otp" disabled
+                        style="opacity: 0.5; cursor: not-allowed; width: 100%; margin-bottom: 15px;" onclick="sendOTP()">
+                        <i class='bx bx-send'></i> Send Verification Code
+                    </button>
+
+                    <div style="display: flex; align-items: center; justify-content: center; margin: 20px 0;">
+                        <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></span>
+                        <span style="padding: 0 15px; color: rgba(255,255,255,0.4); font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px;">or</span>
+                        <span style="flex: 1; height: 1px; background: rgba(255,255,255,0.1);"></span>
+                    </div>
+
+                    <a href="login.html" class="btn btn-secondary dashboard-btn" 
+                        style="width: 100%; background: transparent; border: 1px solid rgba(255,255,255,0.2); color: #fff; display: block; text-align: center; margin-bottom: 20px; transition: all 0.3s ease; text-decoration: none; padding: 12px 20px; border-radius: 8px;" 
+                        onmouseover="this.style.background='rgba(255,255,255,0.08)'; this.style.borderColor='rgba(255,255,255,0.4)'" 
+                        onmouseout="this.style.background='transparent'; this.style.borderColor='rgba(255,255,255,0.2)'">
+                        <i class='bx bx-log-in-circle' style="margin-right: 5px;"></i> Continue to Login
+                    </a>
+
+                    <p style="margin-top: 15px; font-size: 0.85rem; color: rgba(255,255,255,0.4);">OTP will be sent to your email.</p>
+                </div>
+
+                <div id="otp-section">
+                    <div class="otp-container" id="otp-inputs">
+                        <input type="text" class="otp-box" maxlength="1" disabled value="L">
+                        <input type="text" class="otp-box" maxlength="1" disabled value="S">
+                        <input type="text" class="otp-box" maxlength="1" disabled value="A">
+                        <span class="otp-dash">-</span>
+                        <input type="text" class="otp-box digit-box" maxlength="1" data-index="0"
+                            autocomplete="one-time-code">
+                        <input type="text" class="otp-box digit-box" maxlength="1" data-index="1">
+                        <input type="text" class="otp-box digit-box" maxlength="1" data-index="2">
+                        <input type="text" class="otp-box digit-box" maxlength="1" data-index="3">
+                    </div>
+                    <p id="otp-error"
+                        style="color: var(--color-primary); display: none; margin-bottom: 15px; font-weight: 500;"></p>
+                    <button class="btn btn-primary dashboard-btn" id="btn-verify-otp" onclick="verifyOTP()">
+                        <i class='bx bx-check-shield'></i> Verify Code
+                    </button>
+                    <p style="margin-top: 15px; font-size: 0.9rem; color: rgba(255,255,255,0.5);">
+                        Didn't receive the code? <a href="#" id="resend-link" onclick="resendOTP()"
+                            style="color: #fff; font-weight: bold; text-decoration: underline;">Resend</a>
+                    </p>
+                </div>
+
+                <div class="dashboard-buttons" id="auth-buttons" style="justify-content: center; margin-top: 20px;">
+                    <a href="signup.html" class="btn btn-blue dashboard-btn" style="width: 100%; text-align: center; display: block; padding: 15px; border-radius: 8px; font-size: 1.1rem; text-decoration: none;">
+                        <i class='bx bx-user-plus'></i> Complete Sign Up Registration
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <footer style="text-align: center; padding: 30px 0 20px; width: 100%; margin-top: auto;">
+        <p style="font-size: 0.85rem; letter-spacing: 2px; text-transform: uppercase; color: var(--color-text-muted); margin: 0; font-weight: 600; font-family: 'Outfit', sans-serif;">In Union Strong Success is Sure</p>
+    </footer>
+
+    <script>
+        let currentEmail = '';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            if (sessionStorage.getItem('lsa_auth_granted') === 'true') {
+                showGateway();
+            }
+            setupOTPDigits();
+            initWebOTP();
+        });
+
+        function showGateway() {
+            document.getElementById('identity-section').style.display = 'none';
+            document.getElementById('otp-section').style.display = 'none';
+            document.getElementById('auth-buttons').style.display = 'flex';
+            document.getElementById('main-desc').innerHTML = "<strong>Access Granted.</strong> Welcome to the secure registry interface.";
+        }
+
+        function validateIdentity() {
+            const emailVal = document.getElementById('emailInput').value;
+            const btn = document.getElementById('btn-send-otp');
+            const err = document.getElementById('identity-error');
+
+            let isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailVal);
+
+            if (isEmailValid) {
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+                err.style.display = 'none';
+                currentEmail = emailVal;
+            } else {
+                btn.disabled = true;
+                btn.style.opacity = '0.5';
+                btn.style.cursor = 'not-allowed';
+            }
+        }
+
+        async function sendOTP() {
+            const btn = document.getElementById('btn-send-otp');
+            const err = document.getElementById('identity-error');
+
+            btn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Sending...";
+
+            try {
+                const res = await fetch('http://localhost:3000/api/otp/send', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: currentEmail })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    err.innerText = data.error || 'Failed to send OTP.';
+                    err.style.display = 'block';
+                    btn.innerHTML = "<i class='bx bx-send'></i> Send Verification Code";
+                    return;
+                }
+
+                err.style.display = 'none';
+                document.getElementById('identity-section').style.display = 'none';
+                document.getElementById('otp-section').style.display = 'block';
+                document.getElementById('main-desc').innerHTML = `We have sent a verification code to <strong>${currentEmail}</strong>. It will expire in 2 minutes.`;
+
+                document.querySelector('.digit-box').focus();
+                startResendCooldown();
+            } catch (e) {
+                console.error(e);
+                err.innerText = 'Server connection failed. Make sure backend node server.js is running.';
+                err.style.display = 'block';
+                btn.innerHTML = "<i class='bx bx-send'></i> Send Verification Code";
+            }
+        }
+
+        function startResendCooldown() {
+            const resendLink = document.getElementById('resend-link');
+            if (!resendLink) return;
+
+            let timeLeft = 60;
+            resendLink.style.pointerEvents = 'none';
+            resendLink.style.color = 'rgba(255,255,255,0.3)';
+            resendLink.style.textDecoration = 'none';
+            resendLink.innerText = `Resend in ${timeLeft}s`;
+
+            const interval = setInterval(() => {
+                timeLeft--;
+                if (timeLeft <= 0) {
+                    clearInterval(interval);
+                    resendLink.innerText = 'Resend';
+                    resendLink.style.pointerEvents = 'auto';
+                    resendLink.style.color = '#fff';
+                    resendLink.style.textDecoration = 'underline';
+                } else {
+                    resendLink.innerText = `Resend in ${timeLeft}s`;
+                }
+            }, 1000);
+        }
+
+        async function resendOTP() {
+            const resendLink = document.getElementById('resend-link');
+            if (resendLink.style.pointerEvents === 'none') return;
+            document.querySelectorAll('.digit-box').forEach(b => b.value = '');
+            await sendOTP();
+        }
+
+        async function verifyOTP() {
+            const boxes = document.querySelectorAll('.digit-box');
+            let code = 'LSA';
+            boxes.forEach(b => code += b.value);
+
+            const err = document.getElementById('otp-error');
+            const btn = document.getElementById('btn-verify-otp');
+            btn.innerHTML = "<i class='bx bx-loader-alt bx-spin'></i> Verifying...";
+
+            try {
+                const res = await fetch('http://localhost:3000/api/otp/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: currentEmail, code: code })
+                });
+
+                const data = await res.json();
+                if (!res.ok) {
+                    err.innerText = data.error || 'Invalid code.';
+                    err.style.display = 'block';
+                    btn.innerHTML = "<i class='bx bx-check-shield'></i> Verify Code";
+                    return;
+                }
+
+                sessionStorage.setItem('lsa_auth_granted', 'true');
+                showGateway();
+            } catch (e) {
+                console.error(e);
+                err.innerText = 'Server connection failed.';
+                err.style.display = 'block';
+                btn.innerHTML = "<i class='bx bx-check-shield'></i> Verify Code";
+            }
+        }
+
+        function setupOTPDigits() {
+            const digits = document.querySelectorAll('.digit-box');
+            digits.forEach((el, index) => {
+                el.addEventListener('keyup', (e) => {
+                    const key = e.key;
+                    if (key === 'Backspace') {
+                        if (index > 0 && !el.value) {
+                            digits[index - 1].focus();
+                        }
+                    } else if (/^[0-9]$/.test(key)) {
+                        if (index < digits.length - 1) {
+                            digits[index + 1].focus();
+                        }
+                    }
+                });
+                el.addEventListener('input', () => { el.value = el.value.replace(/[^0-9]/g, ''); });
+            });
+        }
+
+        function initWebOTP() {
+            if ('OTPCredential' in window) {
+                const ac = new AbortController();
+                navigator.credentials.get({
+                    otp: { transport: ['sms'] },
+                    signal: ac.signal
+                }).then(otp => {
+                    const code = otp.code;
+                    const digitsOnly = code.replace(/[^0-9]/g, '');
+                    if (digitsOnly.length === 4) {
+                        const boxes = document.querySelectorAll('.digit-box');
+                        boxes[0].value = digitsOnly[0];
+                        boxes[1].value = digitsOnly[1];
+                        boxes[2].value = digitsOnly[2];
+                        boxes[3].value = digitsOnly[3];
+                        verifyOTP();
+                    }
+                }).catch(err => console.log('WebOTP Error', err));
+            }
+        }
+    </script>
+</body>
+
+</html>
