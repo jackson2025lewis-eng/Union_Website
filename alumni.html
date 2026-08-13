@@ -18,8 +18,14 @@
         padding: 24px;
         box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
-        width: 320px;
-        flex: 0 0 320px;
+        width: 100%;
+        max-width: 320px;
+        flex: 0 0 100%;
+      }
+      @media (min-width: 480px) {
+        .bio-card {
+          flex: 0 0 320px;
+        }
       }
       .bio-card:hover {
         transform: translateY(-5px);
@@ -126,12 +132,12 @@
           <a href="index.html" style="color: #2563eb; text-decoration: none; font-weight: 600;"><i class="fa-solid fa-arrow-left"></i> Back to Home</a>
         </div>
         
-        <section class="intro-card" style="background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 24px; padding: 60px 40px; text-align: center; margin-bottom: 60px; color: white; box-shadow: 0 20px 40px rgba(37, 99, 235, 0.25);">
-          <h2 style="font-size: 3rem; font-family: Georgia, 'Times New Roman', serif; margin: 0; color: #ffffff; line-height: 1.2;">Our Distinguished Alumni</h2>
+        <section class="intro-card" style="background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 24px; padding: clamp(30px, 8vw, 60px) clamp(20px, 5vw, 40px); text-align: center; margin-bottom: 60px; color: white; box-shadow: 0 20px 40px rgba(37, 99, 235, 0.25);">
+          <h2 style="font-size: clamp(2rem, 8vw, 3rem); font-family: Georgia, 'Times New Roman', serif; margin: 0; color: #ffffff; line-height: 1.2;">Our Distinguished Alumni</h2>
           <p style="margin-top: 16px; font-size: 1.2rem; opacity: 0.9;">Honoring the leaders and members who have paved the way for our union's success.</p>
         </section>
 
-        <div class="carousel-wrapper" style="position: relative; max-width: 1200px; margin: 0 auto; padding: 0 60px;">
+        <div class="carousel-wrapper" style="position: relative; max-width: 1200px; margin: 0 auto; padding: 0 clamp(20px, 5vw, 60px);">
           <button id="prevBtn" class="carousel-btn" aria-label="Previous" style="position: absolute; left: 0px; top: 50%; transform: translateY(-50%); z-index: 10; width: 48px; height: 48px; border-radius: 50%; background: #2563eb; color: white; border: none; font-size: 1.2rem; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;"><i class="fa-solid fa-chevron-left"></i></button>
           <button id="nextBtn" class="carousel-btn" aria-label="Next" style="position: absolute; right: 0px; top: 50%; transform: translateY(-50%); z-index: 10; width: 48px; height: 48px; border-radius: 50%; background: #2563eb; color: white; border: none; font-size: 1.2rem; cursor: pointer; box-shadow: 0 4px 6px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; transition: all 0.2s ease;"><i class="fa-solid fa-chevron-right"></i></button>
           
