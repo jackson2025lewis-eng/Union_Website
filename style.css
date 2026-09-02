@@ -1408,3 +1408,22 @@ p.info {
     min-height: 220px;
   }
 }
+
+/* Styling for the new registration buttons */
+.primary-btn {
+  display: inline-block;
+  background-color: #2563eb;
+  color: white;
+  padding: 12px 24px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: bold;
+  transition: background-color 0.3s;
+}
+.primary-btn:hover {
+  background-color: #1d4ed8;
+}
+.highlight-link {
+  color: #2563eb !important;
+  font-weight: bold !important;
+}
