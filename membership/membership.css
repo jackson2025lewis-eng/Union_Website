@@ -146,6 +146,8 @@ label {
 input[type="text"],
 input[type="email"],
 input[type="date"],
+input[type="number"],
+input[type="tel"],
 select {
     width: 100%;
     padding: 10px 12px;
@@ -153,20 +155,74 @@ select {
     border-radius: var(--radius-sm);
     font-size: 1rem;
     font-family: inherit;
+    color: var(--text-main);
     transition: border-color 0.2s, box-shadow 0.2s;
     background-color: var(--white);
+}
+
+input::placeholder {
+    color: #94a3b8;
+    opacity: 1;
 }
 
 input[type="file"] {
     width: 100%;
     padding: 8px 0;
     font-size: 0.9rem;
+    color: var(--text-main);
 }
 
 input:focus, select:focus {
     outline: none;
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px var(--focus-ring);
+}
+
+.otp-boxes-container {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    margin-top: 10px;
+}
+
+.otp-box {
+    width: 45px;
+    height: 50px;
+    text-align: center !important;
+    font-size: 1.25rem !important;
+    font-weight: 600;
+    text-transform: uppercase;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background-color: var(--white);
+    color: var(--text-main);
+    transition: all 0.2s;
+    padding: 0 !important;
+}
+
+.otp-box:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px var(--focus-ring);
+    outline: none;
+}
+
+.otp-spacer {
+    width: 10px;
+}
+
+@media (max-width: 480px) {
+    .otp-boxes-container {
+        gap: 4px;
+    }
+    .otp-box {
+        width: 35px;
+        height: 45px;
+        font-size: 1.1rem !important;
+    }
+    .otp-spacer {
+        width: 4px;
+    }
 }
 
 .field-desc {

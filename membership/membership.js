@@ -111,6 +111,67 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
+    // OTP Box Logic
+    const otpBoxes = Array.from(document.querySelectorAll('.otp-box'));
+    const regOtpHidden = document.getElementById('reg-otp');
+
+    otpBoxes.forEach((box, index) => {
+        box.addEventListener('input', (e) => {
+            // Only allow alphanumeric
+            box.value = box.value.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            
+            // If it's a numeric box, force numbers only
+            if (box.classList.contains('numeric')) {
+                box.value = box.value.replace(/[^0-9]/g, '');
+            } else {
+                // First 3 should be letters
+                box.value = box.value.replace(/[^A-Z]/g, '');
+            }
+
+            if (box.value && index < otpBoxes.length - 1) {
+                otpBoxes[index + 1].focus();
+            }
+            updateHiddenOTP();
+        });
+
+        box.addEventListener('keydown', (e) => {
+            if (e.key === 'Backspace' && !box.value && index > 0) {
+                otpBoxes[index - 1].focus();
+            }
+        });
+
+        box.addEventListener('paste', (e) => {
+            e.preventDefault();
+            let pastedData = (e.clipboardData || window.clipboardData).getData('text');
+            pastedData = pastedData.replace(/[^a-zA-Z0-9]/g, '').toUpperCase();
+            
+            for (let i = 0; i < otpBoxes.length; i++) {
+                if (i < pastedData.length) {
+                    let char = pastedData[i];
+                    if (otpBoxes[i].classList.contains('numeric')) {
+                        char = char.replace(/[^0-9]/g, '');
+                    } else {
+                        char = char.replace(/[^A-Z]/g, '');
+                    }
+                    otpBoxes[i].value = char;
+                } else {
+                    otpBoxes[i].value = '';
+                }
+            }
+            updateHiddenOTP();
+            
+            // Focus last filled box
+            const lastIndex = Math.min(pastedData.length - 1, otpBoxes.length - 1);
+            if (lastIndex >= 0) {
+                otpBoxes[lastIndex].focus();
+            }
+        });
+    });
+
+    function updateHiddenOTP() {
+        regOtpHidden.value = otpBoxes.map(b => b.value).join('');
+    }
+
     // OTP Form Submit
     otpForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -119,6 +180,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const otpError = document.getElementById('otp-error-msg');
         const submitBtn = otpForm.querySelector('button[type="submit"]');
         
+        if (otpInput.value.length !== 7) {
+            otpError.textContent = 'Please complete all 7 characters of the OTP.';
+            otpInput.parentElement.classList.add('has-error');
+            return;
+        }
+
         const originalBtnText = submitBtn.textContent;
         submitBtn.textContent = 'Verifying...';
         submitBtn.disabled = true;

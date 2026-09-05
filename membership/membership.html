@@ -99,9 +99,19 @@
                 <p class="subtitle">An OTP has been sent to <strong id="display-email"></strong>.</p>
                 <form id="otp-form">
                     <div class="form-group">
-                        <label for="reg-otp">Enter OTP <span class="required-star">★</span></label>
-                        <input type="text" id="reg-otp" name="otp" placeholder="e.g. LSU1234" required maxlength="7" pattern="^LSU\d{4}$" title="OTP must be in the format LSU followed by 4 digits">
-                        <div class="error-msg" id="otp-error-msg">Please enter a valid OTP format (e.g., LSU1234).</div>
+                        <label>Enter OTP <span class="required-star">★</span></label>
+                        <div class="otp-boxes-container" id="otp-boxes-container">
+                            <input type="text" class="otp-box" maxlength="1" aria-label="OTP Character 1" required>
+                            <input type="text" class="otp-box" maxlength="1" aria-label="OTP Character 2" required>
+                            <input type="text" class="otp-box" maxlength="1" aria-label="OTP Character 3" required>
+                            <span class="otp-spacer"></span>
+                            <input type="text" class="otp-box numeric" maxlength="1" inputmode="numeric" aria-label="OTP Digit 4" required>
+                            <input type="text" class="otp-box numeric" maxlength="1" inputmode="numeric" aria-label="OTP Digit 5" required>
+                            <input type="text" class="otp-box numeric" maxlength="1" inputmode="numeric" aria-label="OTP Digit 6" required>
+                            <input type="text" class="otp-box numeric" maxlength="1" inputmode="numeric" aria-label="OTP Digit 7" required>
+                        </div>
+                        <input type="hidden" id="reg-otp" name="otp" required>
+                        <div class="error-msg" id="otp-error-msg">Please enter a valid 7-character OTP.</div>
                     </div>
                     <button type="submit" class="btn-primary btn-block">Verify & Continue</button>
                     <button type="button" class="btn-secondary btn-block" id="btn-back-email">Back</button>
