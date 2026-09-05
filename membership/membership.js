@@ -281,15 +281,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generateYears() {
         const currentYear = new Date().getFullYear();
-        const startYear = 1970;
-        
+        const startYear = 2020;
+        const futureYears = 10;
+
         document.querySelectorAll('.year-select').forEach(select => {
-            // Keep the placeholder if it exists, clear other options
             const placeholder = select.querySelector('option[disabled]');
             select.innerHTML = '';
-            if (placeholder) select.appendChild(placeholder);
-            
-            for (let y = currentYear; y >= startYear; y--) {
+
+            if (placeholder) {
+                select.appendChild(placeholder);
+            }
+
+            for (let y = currentYear + futureYears; y >= startYear; y--) {
                 const option = document.createElement('option');
                 option.value = y;
                 option.textContent = y;
@@ -383,6 +386,15 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
+                if (input.name === 'passportFile' && input.files.length > 0) {
+                    const file = input.files[0];
+                    const maxSize = 10 * 1024 * 1024; // 10 MB
+                    if (file.type !== 'application/pdf' || file.size > maxSize) {
+                        isValid = false;
+                        input.closest('.form-group').classList.add('has-error');
+                    }
+                }
+
                 if (input.name === 'privacyConsent' && !input.checked) {
                     isValid = false;
                     input.closest('.form-group').classList.add('has-error');
@@ -468,15 +480,21 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Get files
                 let efroFileObj = null;
                 let passportPhotoObj = null;
+                let passportFileObj = null;
                 
                 const efroInput = formWrapper.querySelector('input[name="efro"]');
                 if (efroInput && efroInput.files.length > 0) {
                     efroFileObj = await getBase64(efroInput.files[0]);
                 }
                 
-                const passportInput = formWrapper.querySelector('input[name="passportPhoto"]');
-                if (passportInput && passportInput.files.length > 0) {
-                    passportPhotoObj = await getBase64(passportInput.files[0]);
+                const passportPhotoInput = formWrapper.querySelector('input[name="passportPhoto"]');
+                if (passportPhotoInput && passportPhotoInput.files.length > 0) {
+                    passportPhotoObj = await getBase64(passportPhotoInput.files[0]);
+                }
+
+                const passportDocInput = formWrapper.querySelector('input[name="passportFile"]');
+                if (passportDocInput && passportDocInput.files.length > 0) {
+                    passportFileObj = await getBase64(passportDocInput.files[0]);
                 }
 
                 const payload = {
@@ -505,7 +523,8 @@ document.addEventListener('DOMContentLoaded', () => {
                         "Email": formData.email // Added verified email implicitly if needed
                     },
                     efroFile: efroFileObj,
-                    passportPhoto: passportPhotoObj
+                    passportPhoto: passportPhotoObj,
+                    passportFile: passportFileObj
                 };
 
                 const response = await fetch(SCRIPT_URL, {
@@ -637,6 +656,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <h4>Documents</h4>
             ${formData.efro ? `<div class="review-item"><div class="review-label">EFRO:</div><div class="review-value">Uploaded (${formData.efro})</div></div>` : ''}
             ${formData.passportPhoto ? `<div class="review-item"><div class="review-label">Passport Photograph:</div><div class="review-value">Uploaded (${formData.passportPhoto})</div></div>` : ''}
+            ${formData.passportFile ? `<div class="review-item"><div class="review-label">Passport Document:</div><div class="review-value">Uploaded (${formData.passportFile})</div></div>` : ''}
         </div>
         `;
         

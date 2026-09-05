@@ -322,6 +322,12 @@
                     <input type="file" id="s-passportPhoto" name="passportPhoto" accept=".jpg, .jpeg, image/jpeg" required>
                     <div class="error-msg">Please upload your passport-size photograph in JPG/JPEG format.</div>
                 </div>
+                <div class="form-group full-width">
+                    <label for="s-passportFile">Passport Document <span class="required-star">★</span></label>
+                    <p class="field-desc">Upload your Passport document as a PDF (Max 10 MB).</p>
+                    <input type="file" id="s-passportFile" name="passportFile" accept=".pdf,application/pdf" required>
+                    <div class="error-msg">Please upload your Passport document as a PDF (Max 10 MB).</div>
+                </div>
             </div>
         </div>
 
@@ -430,14 +436,26 @@
         </div>
 
         <div class="step-content" data-type="alumni" data-step="4" data-label="Documents">
-            <h3>SECTION D — REQUIRED DOCUMENT</h3>
-            <p class="section-desc">The following document is required for alumni verification.</p>
+            <h3>SECTION D — REQUIRED DOCUMENTS</h3>
+            <p class="section-desc">The following documents are required for alumni verification.</p>
             <div class="form-row">
+                <div class="form-group full-width">
+                    <label for="a-efro">EFRO <span class="required-star">★</span></label>
+                    <p class="field-desc">Upload your EFRO as a PDF. The document must contain exactly one page.</p>
+                    <input type="file" id="a-efro" name="efro" accept="application/pdf" required>
+                    <div class="error-msg">Please upload your EFRO as a one-page PDF.</div>
+                </div>
                 <div class="form-group full-width">
                     <label for="a-passportPhoto">Passport Size Photograph <span class="required-star">★</span></label>
                     <p class="field-desc">Upload a recent, clear passport-size photograph in JPG/JPEG format only.</p>
                     <input type="file" id="a-passportPhoto" name="passportPhoto" accept=".jpg, .jpeg, image/jpeg" required>
                     <div class="error-msg">Please upload your passport-size photograph in JPG/JPEG format.</div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="a-passportFile">Passport Document <span class="required-star">★</span></label>
+                    <p class="field-desc">Upload your Passport document as a PDF (Max 10 MB).</p>
+                    <input type="file" id="a-passportFile" name="passportFile" accept=".pdf,application/pdf" required>
+                    <div class="error-msg">Please upload your Passport document as a PDF (Max 10 MB).</div>
                 </div>
             </div>
         </div>
