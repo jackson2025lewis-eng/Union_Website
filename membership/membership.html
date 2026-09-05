@@ -1,0 +1,502 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Membership Registration | Liberian Students Union in Odisha</title>
+    <link rel="icon" type="image/jpeg" href="../assets/images/Logo.jpg" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="membership.css">
+    <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to Main Content</a>
+    <header class="page-header" role="banner">
+      <div class="top-bar">
+        <a class="top-email" href="mailto:info@lsuo.org"><i class="fa-regular fa-envelope"></i> info@lsuo.org</a>
+        <div class="top-social">
+          <a href="#"><i class="fa-brands fa-facebook-f"></i></a>
+          <a href="#"><i class="fa-brands fa-whatsapp"></i></a>
+          <a href="#"><i class="fa-brands fa-linkedin-in"></i></a>
+          <a href="#"><i class="fa-solid fa-globe"></i></a>
+        </div>
+      </div>
+      <div class="main-nav-row">
+        <button id="hamburgerBtn" class="hamburger-btn" aria-label="Open Menu" aria-expanded="false" aria-controls="sidebar">
+          <i class="fa-solid fa-bars" aria-hidden="true"></i>
+        </button>
+        <a class="brand-logo" href="../index.html">
+          <img class="brand-icon" src="../assets/images/Logo.jpg" alt="LSUO logo" />
+          <span class="brand-name">LSUO</span>
+        </a>
+      </div>
+    </header>
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <aside class="sidebar" id="sidebar" aria-label="Mobile Navigation">
+      <a class="brand-logo" href="../index.html" style="margin-bottom: 20px;">
+        <img class="brand-icon" src="../assets/images/Logo.jpg" alt="LSUO logo" />
+        <span class="brand-name">LSUO Menu</span>
+      </a>
+      <nav class="main-nav" aria-label="Main Navigation">
+        <a href="../index.html" class="nav-link">Home</a>
+        <a href="../about.html" class="nav-link">About</a>
+        <div class="nav-dropdown" id="chaptersDropdown">
+          <button class="nav-dropdown-btn nav-link" aria-expanded="false" aria-haspopup="true">Local Chapters <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
+          <div class="nav-dropdown-content">
+            <a href="../soa-leadership.html" class="nav-link">SOA Chapter</a>
+            <a href="../cv-raman-leadership.html" class="nav-link">CV Raman</a>
+            <a href="../kiit-leadership.html" class="nav-link">KIIT</a>
+          </div>
+        </div>
+        <a href="../alumni.html" class="nav-link">Alumni</a>
+        <a href="../contact.html" class="nav-link">Contact</a>
+        <a href="membership.html" class="primary-btn" style="text-align: center; margin-top: 10px;">Join Us</a>
+      </nav>
+    </aside>
+
+    <div class="page-shell">
+      <main class="content page-content" id="main-content" role="main">
+        <div style="margin-bottom: 24px;">
+          <a href="../index.html" style="color: #2563eb; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; transition: color 0.2s;"><i class="fa-solid fa-arrow-left"></i> Back to Home</a>
+        </div>
+        
+        <div class="app-container">
+            <!-- Header -->
+        <header class="app-header">
+            <a href="../index.html">
+                <img src="../assets/images/Logo.jpg" alt="LSUO Logo" class="app-logo">
+            </a>
+            <h1>Liberian Students Union in Odisha</h1>
+        </header>
+
+        <!-- View 1: Email Verification -->
+        <div id="view-email" class="view-section active">
+            <div class="card">
+                <h2>JOIN MEMBERSHIP</h2>
+                <p class="subtitle">To begin your membership registration, please verify your email address. Your email will be used to confirm your identity and communicate important membership information.</p>
+                <form id="email-form">
+                    <div class="form-group">
+                        <label for="reg-email">Email Address <span class="required-star">★</span></label>
+                        <input type="email" id="reg-email" name="email" placeholder="Enter your email address" required>
+                        <div class="error-msg" id="email-error"></div>
+                    </div>
+                    <div class="form-group cf-turnstile-wrapper">
+                        <!-- Turnstile Widget -->
+                        <div class="cf-turnstile" data-sitekey="0x4AAAAAAEmP4m7VGwGoVX4m"></div>
+                        <div class="error-msg" id="captcha-error"></div>
+                    </div>
+                    <button type="submit" class="btn-primary btn-block">Submit & Continue</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- View 2: Mock OTP Verification (Future Backend) -->
+        <div id="view-otp" class="view-section hidden">
+            <div class="card">
+                <h2>VERIFY EMAIL</h2>
+                <p class="subtitle">An OTP has been sent to <strong id="display-email"></strong>.</p>
+                <form id="otp-form">
+                    <div class="form-group">
+                        <label for="reg-otp">Enter OTP <span class="required-star">★</span></label>
+                        <input type="text" id="reg-otp" name="otp" placeholder="e.g. LSU1234" required maxlength="7" pattern="^LSU\d{4}$" title="OTP must be in the format LSU followed by 4 digits">
+                        <div class="error-msg" id="otp-error-msg">Please enter a valid OTP format (e.g., LSU1234).</div>
+                    </div>
+                    <button type="submit" class="btn-primary btn-block">Verify & Continue</button>
+                    <button type="button" class="btn-secondary btn-block" id="btn-back-email">Back</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- View 3: Membership Type Selection -->
+        <div id="view-type" class="view-section hidden">
+            <div class="card">
+                <h2>JOIN MEMBERSHIP</h2>
+                <p class="subtitle">Please select your membership category to continue.</p>
+                <div class="type-selection">
+                    <button class="btn-type" id="btn-type-student">
+                        <h3>CURRENT STUDENT</h3>
+                    </button>
+                    <button class="btn-type" id="btn-type-alumni">
+                        <h3>ALUMNI</h3>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- View 4: Form Container -->
+        <div id="view-form" class="view-section hidden">
+            <div class="card form-card">
+                <button class="btn-text btn-back-type">← Change Membership Type</button>
+                <h2 id="form-title">CURRENT STUDENT REGISTRATION</h2>
+
+                <!-- Progress Indicator -->
+                <div class="progress-indicator" id="progress-indicator">
+                    <!-- Dynamic dots and labels injected by JS -->
+                </div>
+
+                <!-- Forms Wrapper -->
+                <div class="form-wrapper" id="form-wrapper">
+                    <!-- Student/Alumni Steps injected or toggled by JS -->
+                </div>
+                
+                <div class="form-navigation">
+                    <button type="button" class="btn-secondary" id="btn-prev">Back</button>
+                    <button type="button" class="btn-primary" id="btn-next">Next</button>
+                    <button type="button" class="btn-primary hidden" id="btn-submit-final">Submit Registration</button>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+
+    <!-- Hidden Template for Form Steps -->
+    <div id="step-templates" style="display: none;">
+        
+        <!-- STUDENT STEPS -->
+        <div class="step-content" data-type="student" data-step="1" data-label="Personal">
+            <h3>SECTION A — PERSONAL INFORMATION</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="s-firstName">First Name <span class="required-star">★</span></label>
+                    <input type="text" id="s-firstName" name="firstName" required>
+                    <div class="error-msg">First Name is required.</div>
+                </div>
+                <div class="form-group">
+                    <label for="s-middleName">Middle Name — Optional</label>
+                    <input type="text" id="s-middleName" name="middleName">
+                </div>
+                <div class="form-group">
+                    <label for="s-lastName">Last Name <span class="required-star">★</span></label>
+                    <input type="text" id="s-lastName" name="lastName" required>
+                    <div class="error-msg">Last Name is required.</div>
+                </div>
+                <div class="form-group">
+                    <label for="s-gender">Gender <span class="required-star">★</span></label>
+                    <select id="s-gender" name="gender" required>
+                        <option value="" disabled selected hidden></option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                    <div class="error-msg">Please select a gender.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step-content" data-type="student" data-step="2" data-label="Membership">
+            <h3>SECTION B — MEMBERSHIP INFORMATION</h3>
+            <div class="form-row">
+                <div class="form-group full-width">
+                    <label for="s-membershipStatusRole">Membership Status / Role <span class="required-star">★</span></label>
+                    <select id="s-membershipStatusRole" name="membershipStatusRole" required>
+                        <option value="" disabled selected hidden></option>
+                        <option value="Member">Member</option>
+                        <option value="President">President</option>
+                        <option value="Vice-President">Vice-President</option>
+                        <option value="Secretary General">Secretary General</option>
+                        <option value="Financial Secretary">Financial Secretary</option>
+                        <option value="Chaplain">Chaplain</option>
+                    </select>
+                    <div class="error-msg">Please select a membership role.</div>
+                </div>
+                <div class="form-group">
+                    <label for="s-whatsappNumber">WhatsApp Number <span class="required-star">★</span></label>
+                    <input type="text" id="s-whatsappNumber" name="whatsappNumber" placeholder="+91XXXXXXXXXX" required pattern="^\+\d{6,15}$">
+                    <div class="error-msg">WhatsApp number must include the country code.</div>
+                </div>
+                <div class="form-group">
+                    <label for="s-mobileNumber">Mobile Number <span class="required-star">★</span></label>
+                    <input type="text" id="s-mobileNumber" name="mobileNumber" placeholder="+919876543210" required pattern="^\+91\d{10}$">
+                    <div class="error-msg">Mobile number must begin with +91.</div>
+                </div>
+                <div class="form-group">
+                    <label for="s-passportNumber">Passport Number <span class="required-star">★</span></label>
+                    <input type="text" id="s-passportNumber" name="passportNumber" required pattern="^[A-Za-z][A-Za-z0-9]*$">
+                    <div class="error-msg">Passport number must begin with a letter.</div>
+                </div>
+                <div class="form-group">
+                    <label for="s-collegeRegistrationNumber">College Registration Number <span class="required-star">★</span></label>
+                    <input type="text" id="s-collegeRegistrationNumber" name="collegeRegistrationNumber" required>
+                    <div class="error-msg">College Registration Number is required.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step-content" data-type="student" data-step="3" data-label="Academic">
+            <h3>SECTION C — ACADEMIC INFORMATION</h3>
+            <div class="form-row">
+                <div class="form-group full-width">
+                    <label for="s-university">University <span class="required-star">★</span></label>
+                    <select id="s-university" name="university" required>
+                        <option value="" disabled selected hidden></option>
+                        <option value="SOA University">SOA University</option>
+                        <option value="KIIT University">KIIT University</option>
+                        <option value="C V Raman University">C V Raman University</option>
+                    </select>
+                    <div class="error-msg">Please select your university.</div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="s-degreeType">Degree Type <span class="required-star">★</span></label>
+                    <select id="s-degreeType" name="degreeType" required>
+                        <option value="" disabled selected hidden></option>
+                        <option value="Bachelor">Bachelor</option>
+                        <option value="Master">Master</option>
+                        <option value="PHD">PHD</option>
+                    </select>
+                    <div class="error-msg">Please select a valid degree type.</div>
+                </div>
+                
+                <div class="form-group full-width">
+                    <label>Duration of Studies <span class="required-star">★</span></label>
+                    <div class="duration-row">
+                        <div class="duration-col">
+                            <label for="s-studyFrom" class="sub-label">From <span class="required-star">★</span></label>
+                            <select id="s-studyFrom" name="studyFrom" class="year-select" required>
+                                <option value="" disabled selected hidden></option>
+                            </select>
+                            <div class="error-msg">Required.</div>
+                        </div>
+                        <div class="duration-col">
+                            <label for="s-studyTo" class="sub-label">To <span class="required-star">★</span></label>
+                            <select id="s-studyTo" name="studyTo" class="year-select" required>
+                                <option value="" disabled selected hidden></option>
+                            </select>
+                            <div class="error-msg" id="s-duration-error">Required.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="form-group full-width">
+                    <label for="s-fieldOfStudies">Field of Studies <span class="required-star">★</span></label>
+                    <input type="text" id="s-fieldOfStudies" name="fieldOfStudies" placeholder="e.g. Computer Applications" required>
+                    <div class="error-msg">Field of Studies is required.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step-content" data-type="student" data-step="4" data-label="Parent">
+            <h3>SECTION D — PARENT / FAMILY INFORMATION</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="s-motherName">Mother's Name <span class="required-star">★</span></label>
+                    <input type="text" id="s-motherName" name="motherName" required>
+                    <div class="error-msg">Mother's Name is required.</div>
+                </div>
+                <div class="form-group">
+                    <label for="s-fatherName">Father's Name <span class="required-star">★</span></label>
+                    <input type="text" id="s-fatherName" name="fatherName" required>
+                    <div class="error-msg">Father's Name is required.</div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="s-parentsContact">Parents' Contact <span class="required-star">★</span></label>
+                    <input type="text" id="s-parentsContact" name="parentsContact" required placeholder="+XXXXXXXXXXXX">
+                    <div class="error-msg">Parents' Contact is required.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step-content" data-type="student" data-step="5" data-label="Documents">
+            <h3>SECTION E — REQUIRED DOCUMENTS</h3>
+            <p class="section-desc">The following documents are required for membership verification and organizational records.</p>
+            <div class="form-row">
+                <div class="form-group full-width">
+                    <label for="s-efro">EFRO <span class="required-star">★</span></label>
+                    <p class="field-desc">Upload your EFRO as a PDF. The document must contain exactly one page.</p>
+                    <input type="file" id="s-efro" name="efro" accept="application/pdf" required>
+                    <div class="error-msg">Please upload your EFRO as a one-page PDF.</div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="s-passportPhoto">Passport Size Photograph <span class="required-star">★</span></label>
+                    <p class="field-desc">Upload a recent, clear passport-size photograph in JPG/JPEG format only.</p>
+                    <input type="file" id="s-passportPhoto" name="passportPhoto" accept=".jpg, .jpeg, image/jpeg" required>
+                    <div class="error-msg">Please upload your passport-size photograph in JPG/JPEG format.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ALUMNI STEPS -->
+        <div class="step-content" data-type="alumni" data-step="1" data-label="Personal">
+            <h3>SECTION A — PERSONAL INFORMATION</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="a-firstName">First Name <span class="required-star">★</span></label>
+                    <input type="text" id="a-firstName" name="firstName" required>
+                    <div class="error-msg">First Name is required.</div>
+                </div>
+                <div class="form-group">
+                    <label for="a-middleName">Middle Name — Optional</label>
+                    <input type="text" id="a-middleName" name="middleName">
+                </div>
+                <div class="form-group">
+                    <label for="a-lastName">Last Name <span class="required-star">★</span></label>
+                    <input type="text" id="a-lastName" name="lastName" required>
+                    <div class="error-msg">Last Name is required.</div>
+                </div>
+                <div class="form-group">
+                    <label for="a-gender">Gender <span class="required-star">★</span></label>
+                    <select id="a-gender" name="gender" required>
+                        <option value="" disabled selected hidden></option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                    </select>
+                    <div class="error-msg">Please select a gender.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step-content" data-type="alumni" data-step="2" data-label="Organization">
+            <h3>SECTION B — ORGANIZATION INFORMATION</h3>
+            <div class="form-row">
+                <div class="form-group full-width">
+                    <label for="a-alumniPositionRole">Alumni Position Served / Role <span class="required-star">★</span></label>
+                    <select id="a-alumniPositionRole" name="alumniPositionRole" required>
+                        <option value="" disabled selected hidden></option>
+                        <option value="Member">Member</option>
+                        <option value="President">President</option>
+                        <option value="Vice-President">Vice-President</option>
+                        <option value="Secretary General">Secretary General</option>
+                        <option value="Financial Secretary">Financial Secretary</option>
+                        <option value="Chaplain">Chaplain</option>
+                    </select>
+                    <div class="error-msg">Please select a role.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step-content" data-type="alumni" data-step="3" data-label="Academic">
+            <h3>SECTION C — ACADEMIC INFORMATION</h3>
+            <div class="form-row">
+                <div class="form-group full-width">
+                    <label for="a-university">University Graduated From <span class="required-star">★</span></label>
+                    <select id="a-university" name="university" required>
+                        <option value="" disabled selected hidden></option>
+                        <option value="SOA University">SOA University</option>
+                        <option value="KIIT University">KIIT University</option>
+                        <option value="C V Raman University">C V Raman University</option>
+                    </select>
+                    <div class="error-msg">Please select your university.</div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="a-graduationDate">Date of Graduation <span class="required-star">★</span></label>
+                    <input type="date" id="a-graduationDate" name="graduationDate" required>
+                    <div class="error-msg">Date of Graduation is required.</div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="a-degreeType">Degree Type <span class="required-star">★</span></label>
+                    <select id="a-degreeType" name="degreeType" required>
+                        <option value="" disabled selected hidden></option>
+                        <option value="Bachelor">Bachelor</option>
+                        <option value="Master">Master</option>
+                        <option value="PHD">PHD</option>
+                    </select>
+                    <div class="error-msg">Please select a valid degree type.</div>
+                </div>
+                <div class="form-group full-width">
+                    <label>Duration of Studies <span class="required-star">★</span></label>
+                    <div class="duration-row">
+                        <div class="duration-col">
+                            <label for="a-studyFrom" class="sub-label">From <span class="required-star">★</span></label>
+                            <select id="a-studyFrom" name="studyFrom" class="year-select" required>
+                                <option value="" disabled selected hidden></option>
+                            </select>
+                            <div class="error-msg">Required.</div>
+                        </div>
+                        <div class="duration-col">
+                            <label for="a-studyTo" class="sub-label">To <span class="required-star">★</span></label>
+                            <select id="a-studyTo" name="studyTo" class="year-select" required>
+                                <option value="" disabled selected hidden></option>
+                            </select>
+                            <div class="error-msg" id="a-duration-error">Required.</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group full-width">
+                    <label for="a-fieldOfStudies">Field of Studies <span class="required-star">★</span></label>
+                    <input type="text" id="a-fieldOfStudies" name="fieldOfStudies" required>
+                    <div class="error-msg">Field of Studies is required.</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="step-content" data-type="alumni" data-step="4" data-label="Documents">
+            <h3>SECTION D — REQUIRED DOCUMENT</h3>
+            <p class="section-desc">The following document is required for alumni verification.</p>
+            <div class="form-row">
+                <div class="form-group full-width">
+                    <label for="a-passportPhoto">Passport Size Photograph <span class="required-star">★</span></label>
+                    <p class="field-desc">Upload a recent, clear passport-size photograph in JPG/JPEG format only.</p>
+                    <input type="file" id="a-passportPhoto" name="passportPhoto" accept=".jpg, .jpeg, image/jpeg" required>
+                    <div class="error-msg">Please upload your passport-size photograph in JPG/JPEG format.</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- SHARED PRIVACY & REVIEW STEP -->
+        <div class="step-content" id="shared-privacy-review" data-label="Review">
+            <h3>DATA PROTECTION & PRIVACY</h3>
+            <div class="privacy-notice-box">
+                <p>Liberian Students Union in Odisha recognizes the importance of protecting the personal information entrusted to us. The information collected through this membership registration is used for legitimate organizational purposes, including membership administration, verification, communication, record keeping, organizational planning, and the delivery of member services.</p>
+                <p>The Union will take reasonable and appropriate measures to protect member information against unauthorized access, disclosure, alteration, loss, or misuse. Access to personal information should be limited to authorized persons who require it for legitimate organizational purposes.</p>
+                <p>Members have the right, subject to applicable law and organizational procedures, to request access to, correction of, or information about the personal data held about them. Information may also be retrieved or disclosed where reasonably required for legitimate organizational purposes, legal obligations, regulatory requirements, or other lawful purposes.</p>
+                <p>By submitting this registration, you acknowledge that you have been informed about the collection and use of your personal information and consent to its processing for the purposes described in this notice, subject to applicable data-protection law.</p>
+                
+                <h4>Internationally Recognized Data Protection Principles</h4>
+                <p>Organization Name is committed to handling personal information in accordance with applicable data-protection requirements and internationally recognized data-protection principles, including principles reflected in frameworks such as the EU General Data Protection Regulation (GDPR), where applicable.</p>
+                
+                <h4>Member Data Rights</h4>
+                <p>These rights are subject to applicable law, legitimate organizational requirements, legal obligations, and appropriate verification of the identity of the requester. Members may have rights regarding their personal data, including the right to know how information is used, request access, request correction, request deletion, ask questions about data handling, and withdraw consent.</p>
+            </div>
+
+            <div class="form-group checkbox-group mt-20">
+                <label class="checkbox-container">
+                    <input type="checkbox" id="privacyConsent" name="privacyConsent" required>
+                    <span class="checkmark"></span>
+                    <span class="checkbox-label">I have read and understood the Data Protection and Privacy Notice, and I consent to the collection and processing of my personal information for the purposes described above, subject to applicable law. <span class="required-star">★</span></span>
+                </label>
+                <div class="error-msg">You must accept the privacy notice to continue.</div>
+            </div>
+
+            <hr class="review-divider">
+
+            <h3>REGISTRATION REVIEW</h3>
+            <div id="review-content" class="review-content">
+                <!-- Dynamically populated by JS -->
+            </div>
+        </div>
+        
+    </div>
+
+    </div>
+      </main>
+    </div>
+
+    <footer class="site-footer" role="contentinfo">
+      <p class="footer-motto">Unity, Excellence, and Service</p>
+      <p>&copy; 2025 Liberian Student Union in Odisha. All rights reserved.</p>
+    </footer>
+
+    <script>
+      const hamburgerBtn = document.getElementById('hamburgerBtn');
+      const sidebar = document.getElementById('sidebar');
+      const sidebarOverlay = document.getElementById('sidebarOverlay');
+
+      function toggleSidebar() {
+        sidebar.classList.toggle('open');
+        sidebarOverlay.classList.toggle('active');
+      }
+
+      if(hamburgerBtn) hamburgerBtn.addEventListener('click', toggleSidebar);
+      if(sidebarOverlay) sidebarOverlay.addEventListener('click', toggleSidebar);
+
+      const chaptersDropdown = document.getElementById('chaptersDropdown');
+      if(chaptersDropdown) {
+        const btn = chaptersDropdown.querySelector('.nav-dropdown-btn');
+        btn.addEventListener('click', () => {
+          chaptersDropdown.classList.toggle('open');
+        });
+      }
+    </script>
+    <script src="membership.js"></script>
+</body>
+</html>
