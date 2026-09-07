@@ -497,6 +497,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     passportFileObj = await getBase64(passportDocInput.files[0]);
                 }
 
+                let dobFormatted = formData.dateOfBirth || '';
+                if (dobFormatted) {
+                    const [yyyy, mm, dd] = dobFormatted.split('-');
+                    dobFormatted = `${mm}/${dd}/${yyyy}`; // Format as MM/DD/YYYY
+                }
+
                 const payload = {
                     action: 'submitApplication',
                     data: {
@@ -507,6 +513,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         "Gender": formData.gender || '',
                         "Position / Role": formData.membershipStatusRole || formData.alumniPositionRole || '',
                         "WhatsApp Number": formData.whatsappNumber || '',
+                        "Date of Birth": dobFormatted,
                         "Mobile Number": formData.mobileNumber || '',
                         "Passport Number": formData.passportNumber || '',
                         "College Registration Number": formData.collegeRegistrationNumber || '',
@@ -526,6 +533,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     passportPhoto: passportPhotoObj,
                     passportFile: passportFileObj
                 };
+
+                if (membershipType === 'alumni') {
+                    delete payload.efroFile;
+                }
 
                 const response = await fetch(SCRIPT_URL, {
                     method: 'POST',
@@ -603,6 +614,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ${formData.middleName ? `<div class="review-item"><div class="review-label">Middle Name:</div><div class="review-value">${formData.middleName}</div></div>` : ''}
             <div class="review-item"><div class="review-label">Last Name:</div><div class="review-value">${formData.lastName || ''}</div></div>
             <div class="review-item"><div class="review-label">Gender:</div><div class="review-value">${formData.gender || ''}</div></div>
+            <div class="review-item"><div class="review-label">Date of Birth:</div><div class="review-value">${formData.dateOfBirth || ''}</div></div>
         </div>
         `;
         
