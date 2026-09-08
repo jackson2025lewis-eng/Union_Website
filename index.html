@@ -11,7 +11,8 @@
   </head>
   <body>
     <a href="#main-content" class="skip-link">Skip to Main Content</a>
-    <header class="page-header" role="banner">
+    <header class="page-header" role="banner" style="position: relative;">
+      <div id="admin-trigger" style="position: absolute; top: 0; right: 0; width: 60px; height: 60px; z-index: 9999; cursor: default;" title=""></div>
       <div class="top-bar">
         <a class="top-email" href="mailto:info@lsuo.org"><i class="fa-regular fa-envelope"></i> info@lsuo.org</a>
         <div class="top-social">
@@ -67,7 +68,7 @@
                 PROFESSIONAL DEVELOPMENT AMONG LIBERIAN STUDENTS IN ODISHA.</b>
             </p>
             <div class="hero-actions" style="margin-top: 20px;">
-              <a href="Google Link" target="_blank" rel="noopener noreferrer" class="primary-btn">Become a Member</a>
+              <a href="membership/membership.html" class="primary-btn">Become a Member</a>
             </div>
           </div>
           <div class="hero-visual">
@@ -232,6 +233,25 @@
         const btn = chaptersDropdown.querySelector('.nav-dropdown-btn');
         btn.addEventListener('click', () => {
           chaptersDropdown.classList.toggle('open');
+        });
+      }
+
+      // Hidden Administrator Trigger
+      const adminTrigger = document.getElementById('admin-trigger');
+      if (adminTrigger) {
+        let adminClickCount = 0;
+        let adminClickTimer;
+        adminTrigger.addEventListener('click', (e) => {
+          e.preventDefault();
+          adminClickCount++;
+          clearTimeout(adminClickTimer);
+          
+          if (adminClickCount >= 4) {
+            window.location.href = 'admin/admin.html';
+            adminClickCount = 0;
+          } else {
+            adminClickTimer = setTimeout(() => { adminClickCount = 0; }, 2000);
+          }
         });
       }
     </script>

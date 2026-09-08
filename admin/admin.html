@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Administrator Portal - LSUO</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="admin.css">
+    <link rel="icon" type="image/jpeg" href="../assets/images/Logo.jpg" />
+</head>
+<body>
+    <!-- Login Interface -->
+    <div id="login-view" class="admin-view active">
+        <div class="login-modal">
+            <div class="brand-logo login-logo">
+                <img class="brand-icon" src="../assets/images/Logo.jpg" alt="LSUO logo" />
+                <span class="brand-name">LSUO Admin</span>
+            </div>
+            
+            <div id="email-step">
+                <h2>Administrator Access</h2>
+                <div class="form-group">
+                    <label for="admin-email">Administrator Email</label>
+                    <input type="email" id="admin-email" placeholder="Enter your email" required />
+                </div>
+                <div class="error-msg" id="login-error"></div>
+                <button id="btn-continue" class="primary-btn full-width">Continue</button>
+            </div>
+
+            <div id="otp-step" style="display: none;">
+                <h2>Security Verification</h2>
+                <p style="font-size: 0.9rem; margin-bottom: 15px; color: var(--text-light);">A verification code has been sent to your email.</p>
+                <div class="form-group">
+                    <label for="admin-otp">Administrator Verification Code</label>
+                    <input type="text" id="admin-otp" placeholder="ADM###LSU" required />
+                </div>
+                <div class="error-msg" id="otp-error"></div>
+                <button id="btn-verify" class="primary-btn full-width">Verify Access</button>
+                <button id="btn-back" class="secondary-btn full-width" style="margin-top: 10px;">Back</button>
+            </div>
+            
+            <!-- Loading Spinner -->
+            <div id="login-loading" style="display: none; text-align: center; margin-top: 20px;">
+                <i class="fa-solid fa-spinner fa-spin fa-2x" style="color: var(--primary);"></i>
+            </div>
+        </div>
+    </div>
+
+    <!-- Dashboard Interface -->
+    <div id="dashboard-view" class="admin-view" style="display: none;">
+        <header class="page-header" role="banner">
+            <div class="main-nav-row" style="justify-content: space-between;">
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <button id="sidebarToggle" class="hamburger-btn">
+                        <i class="fa-solid fa-bars"></i>
+                    </button>
+                    <div class="brand-logo">
+                        <img class="brand-icon" src="../assets/images/Logo.jpg" alt="LSUO logo" />
+                        <span class="brand-name">LSUO Admin</span>
+                    </div>
+                </div>
+                <div class="admin-profile">
+                    <span id="current-admin-name">Administrator</span>
+                    <span id="current-admin-role" class="badge">ROLE</span>
+                </div>
+            </div>
+        </header>
+
+        <div class="dashboard-layout">
+            <aside class="admin-sidebar" id="admin-sidebar">
+                <nav class="admin-nav">
+                    <a href="#" class="admin-nav-link active" data-target="panel-dashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
+                    <a href="#" class="admin-nav-link" data-target="panel-applications"><i class="fa-solid fa-folder-open"></i> Applications</a>
+                    <a href="#" class="admin-nav-link chief-only" data-target="panel-administrators" style="display:none;"><i class="fa-solid fa-users-gear"></i> Administrators</a>
+                    <a href="#" class="admin-nav-link" id="btn-logout" style="margin-top: auto; border-top: 1px solid var(--border);"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
+                </nav>
+            </aside>
+
+            <main class="dashboard-content">
+                <!-- Dashboard Reports Panel -->
+                <div id="panel-dashboard" class="dashboard-panel active">
+                    <div class="panel-header">
+                        <h2>Database Summary</h2>
+                        <button id="btn-refresh-stats" class="secondary-btn"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                    </div>
+                    <div class="stats-grid" id="stats-grid">
+                        <!-- Populated via JS -->
+                        <div class="stat-card"><h3>Loading...</h3></div>
+                    </div>
+                </div>
+
+                <!-- Applications Panel -->
+                <div id="panel-applications" class="dashboard-panel" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Membership Applications</h2>
+                        <button id="btn-refresh-apps" class="secondary-btn"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                    </div>
+                    <div class="table-controls">
+                        <input type="text" id="search-apps" placeholder="Search by name, email, or ID..." class="admin-input">
+                        <select id="filter-status" class="admin-select">
+                            <option value="ALL">All Statuses</option>
+                            <option value="UNDER_REVIEW">Under Review</option>
+                            <option value="DOCUMENT UPDATE REQUIRED">Document Update Required</option>
+                            <option value="VERIFIED">Verified</option>
+                            <option value="CONFIRMED">Confirmed</option>
+                            <option value="REJECTED">Rejected</option>
+                        </select>
+                    </div>
+                    <div class="table-container">
+                        <table class="admin-table" id="apps-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Name</th>
+                                    <th>Type</th>
+                                    <th>Status</th>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="apps-tbody">
+                                <tr><td colspan="6" style="text-align: center;">Loading applications...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Administrators Panel (Chief Only) -->
+                <div id="panel-administrators" class="dashboard-panel chief-only" style="display: none;">
+                    <div class="panel-header">
+                        <h2>Manage Administrators</h2>
+                        <button id="btn-add-admin-modal" class="primary-btn"><i class="fa-solid fa-plus"></i> Add Administrator</button>
+                    </div>
+                    <div class="table-container">
+                        <table class="admin-table" id="admins-table">
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Role</th>
+                                    <th>Status</th>
+                                    <th>Added Date</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="admins-tbody">
+                                <tr><td colspan="6" style="text-align: center;">Loading administrators...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <!-- Application Detail Modal -->
+    <div id="modal-app-detail" class="admin-modal-overlay">
+        <div class="admin-modal large-modal">
+            <div class="modal-header">
+                <h3>Application Details</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body" id="app-detail-content">
+                <!-- Content injected via JS -->
+            </div>
+            <div class="modal-footer" id="app-detail-actions">
+                <!-- Actions injected via JS based on role and status -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Document Update Request Modal -->
+    <div id="modal-request-update" class="admin-modal-overlay">
+        <div class="admin-modal">
+            <div class="modal-header">
+                <h3>Request Document Update</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Which document needs to be updated by the applicant?</p>
+                <div class="form-group">
+                    <select id="update-doc-type" class="admin-select">
+                        <option value="EFRO File">EFRO File</option>
+                        <option value="Passport Document">Passport Document</option>
+                        <option value="Passport Photo">Passport Photo</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Reason / Instructions</label>
+                    <textarea id="update-doc-reason" class="admin-input" rows="3" placeholder="e.g. Document is blurry..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn close-modal-btn">Cancel</button>
+                <button id="btn-submit-update-request" class="primary-btn">Send Request</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Admin Modal -->
+    <div id="modal-add-admin" class="admin-modal-overlay">
+        <div class="admin-modal">
+            <div class="modal-header">
+                <h3>Add Administrator</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Name</label>
+                    <input type="text" id="new-admin-name" class="admin-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="new-admin-email" class="admin-input" required>
+                </div>
+                <div class="form-group">
+                    <label>Role</label>
+                    <select id="new-admin-role" class="admin-select">
+                        <option value="ADMINISTRATOR">Administrator</option>
+                        <option value="CHIEF_ADMIN">Chief Administrator</option>
+                    </select>
+                </div>
+                <div class="error-msg" id="add-admin-error"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn close-modal-btn">Cancel</button>
+                <button id="btn-submit-add-admin" class="primary-btn">Add Administrator</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="admin.js"></script>
+</body>
+</html>
