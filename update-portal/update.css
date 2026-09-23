@@ -1,0 +1,85 @@
+body {
+    background-color: var(--bg-alt);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+}
+
+.update-container {
+    background: white;
+    max-width: 500px;
+    width: 100%;
+    margin: 20px;
+    padding: 30px;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-lg);
+    text-align: center;
+}
+
+.brand-header {
+    margin-bottom: 30px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+}
+
+.brand-header h2 {
+    color: var(--primary);
+    margin-top: 15px;
+}
+
+.info-card {
+    background-color: var(--bg-alt);
+    padding: 20px;
+    border-radius: var(--radius-md);
+    margin-bottom: 25px;
+    text-align: left;
+    border-left: 4px solid var(--primary);
+}
+
+.info-card p {
+    margin-bottom: 10px;
+}
+
+.highlight-doc {
+    font-weight: bold;
+    color: var(--primary);
+}
+
+.reason-box {
+    background: #fff;
+    padding: 12px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    font-style: italic;
+    color: var(--text);
+    margin-top: 5px;
+}
+
+.form-group {
+    text-align: left;
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 500;
+}
+
+.form-group input[type="file"] {
+    width: 100%;
+    padding: 10px;
+    border: 1px dashed var(--border);
+    border-radius: 4px;
+    background: #fdfdfd;
+}
+
+.view-state {
+    display: none;
+}
+
+.view-state.active {
+    display: block;
+}

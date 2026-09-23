@@ -90,6 +90,17 @@ function setupEventListeners() {
     
     // Update Request Modal
     document.getElementById('btn-submit-update-request').addEventListener('click', handleSubmitUpdateRequest);
+
+    // Reject Application Modal
+    document.getElementById('btn-submit-reject').addEventListener('click', handleSubmitReject);
+
+    // Sync Emails
+    document.getElementById('btn-sync-emails').addEventListener('click', handleSyncEmails);
+
+    // Stats Mode
+    if(document.getElementById('stats-display-mode')) {
+        document.getElementById('stats-display-mode').addEventListener('change', () => renderStats());
+    }
 }
 
 // ==========================================
@@ -254,12 +265,15 @@ async function loadDashboardData() {
     }
 }
 
+let lastStatsData = null;
+
 function renderStats(stats) {
-    if (!stats) return;
+    if (stats) lastStatsData = stats;
+    else if (lastStatsData) stats = lastStatsData;
+    else return;
     
-    // We will replace the stats grid with two separate sections.
-    const panel = document.getElementById('panel-dashboard');
-    // Find the stats-grid or create it if missing
+    const mode = document.getElementById('stats-display-mode') ? document.getElementById('stats-display-mode').value : 'NUMBER';
+    
     let container = document.getElementById('stats-container');
     if (!container) {
         const oldGrid = document.getElementById('stats-grid');
@@ -267,17 +281,52 @@ function renderStats(stats) {
             container = document.createElement('div');
             container.id = 'stats-container';
             oldGrid.parentNode.replaceChild(container, oldGrid);
-        } else {
-            return;
-        }
+        } else return;
     }
-    
+
+    const renderDegreeBlock = (title, data) => {
+        if (!data || data.total === 0) return '';
+        let mVal = data.male, fVal = data.female, tVal = data.total;
+        let mLabel = '', fLabel = '', tLabel = '';
+        if (mode === 'PERCENTAGE') {
+            mVal = ((data.male / data.total) * 100).toFixed(1) + '%';
+            fVal = ((data.female / data.total) * 100).toFixed(1) + '%';
+            tVal = '100%';
+        }
+        return `
+            <div style="margin-left: 20px; margin-bottom: 15px;">
+                <h5 style="color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 5px;">${title}</h5>
+                <div style="display: flex; gap: 15px; margin-top: 10px;">
+                    <div style="flex:1; background: #f9f9f9; padding: 10px; border-radius: 4px;"><strong>Male:</strong> ${mVal}</div>
+                    <div style="flex:1; background: #f9f9f9; padding: 10px; border-radius: 4px;"><strong>Female:</strong> ${fVal}</div>
+                    <div style="flex:1; background: #f9f9f9; padding: 10px; border-radius: 4px;"><strong>Total:</strong> ${tVal}</div>
+                </div>
+            </div>`;
+    };
+
+    const renderUniversities = (unis) => {
+        if (!unis || Object.keys(unis).length === 0) return '<p>No university data.</p>';
+        let html = '';
+        for (const [uniName, degrees] of Object.entries(unis)) {
+            html += `
+                <details style="margin-bottom: 10px; background: white; border: 1px solid var(--border); border-radius: 4px; padding: 10px;">
+                    <summary style="font-weight: bold; cursor: pointer; color: var(--primary); outline: none;">${uniName}</summary>
+                    <div style="margin-top: 15px;">
+                        ${renderDegreeBlock('Bachelor', degrees.Bachelor)}
+                        ${renderDegreeBlock('Master', degrees.Master)}
+                        ${renderDegreeBlock('PHD', degrees.PHD)}
+                    </div>
+                </details>`;
+        }
+        return html;
+    };
+
     const cs = stats.currentStudents || {};
     const al = stats.alumni || {};
 
     container.innerHTML = `
-        <h3 style="margin-bottom: 15px; color: var(--primary);">Current Students</h3>
-        <div class="stats-grid" style="margin-bottom: 30px;">
+        <h3 style="margin-bottom: 15px; color: var(--primary);">CURRENT STUDENTS</h3>
+        <div class="stats-grid" style="margin-bottom: 20px;">
             <div class="stat-card"><h3>${cs.total || 0}</h3><p>Total</p></div>
             <div class="stat-card"><h3>${cs.male || 0}</h3><p>Male</p></div>
             <div class="stat-card"><h3>${cs.female || 0}</h3><p>Female</p></div>
@@ -285,9 +334,13 @@ function renderStats(stats) {
             <div class="stat-card"><h3>${cs.masters || 0}</h3><p>Master's</p></div>
             <div class="stat-card"><h3>${cs.phd || 0}</h3><p>PHD</p></div>
         </div>
+        <h4 style="margin-bottom: 10px;">University Statistics</h4>
+        <div style="margin-bottom: 30px;">
+            ${renderUniversities(cs.universities)}
+        </div>
 
-        <h3 style="margin-bottom: 15px; color: var(--primary);">Alumni</h3>
-        <div class="stats-grid">
+        <h3 style="margin-bottom: 15px; color: var(--primary);">ALUMNI</h3>
+        <div class="stats-grid" style="margin-bottom: 20px;">
             <div class="stat-card"><h3>${al.total || 0}</h3><p>Total</p></div>
             <div class="stat-card"><h3>${al.male || 0}</h3><p>Male</p></div>
             <div class="stat-card"><h3>${al.female || 0}</h3><p>Female</p></div>
@@ -295,16 +348,20 @@ function renderStats(stats) {
             <div class="stat-card"><h3>${al.masters || 0}</h3><p>Master's</p></div>
             <div class="stat-card"><h3>${al.phd || 0}</h3><p>PHD</p></div>
         </div>
+        <h4 style="margin-bottom: 10px;">University Statistics</h4>
+        <div style="margin-bottom: 30px;">
+            ${renderUniversities(al.universities)}
+        </div>
     `;
 }
 
 function getStatusClass(status) {
     const s = (status || '').toUpperCase();
-    if (s === 'UNDER_REVIEW' || s === 'UNDER REVIEW') return 'status-under-review';
-    if (s === 'VERIFIED') return 'status-verified';
-    if (s === 'CONFIRMED') return 'status-confirmed';
+    if (s === 'UNDER_REVIEW') return 'status-under-review';
+    if (s === 'VERIFICATION_PENDING') return 'status-verified';
+    if (s === 'MEMBER_CONFIRMED') return 'status-confirmed';
     if (s === 'REJECTED') return 'status-rejected';
-    if (s.includes('UPDATE')) return 'status-update-required';
+    if (s === 'NEEDS_CLARIFICATION') return 'status-update-required';
     return '';
 }
 
@@ -324,11 +381,7 @@ function renderApplications() {
         if (statusFilter !== 'ALL') {
             const normalizedAppStatus = (app.status || '').toUpperCase().replace(' ', '_');
             const normalizedFilter = statusFilter.toUpperCase().replace(' ', '_');
-            if (normalizedFilter === 'DOCUMENT_UPDATE_REQUIRED') {
-                 matchesStatus = normalizedAppStatus.includes('UPDATE');
-            } else {
-                 matchesStatus = normalizedAppStatus === normalizedFilter;
-            }
+            matchesStatus = normalizedAppStatus === normalizedFilter;
         }
         
         return matchesSearch && matchesStatus;
@@ -409,25 +462,26 @@ function openAppDetail(appId) {
     
     const isOwnApp = (app.email.toLowerCase() === currentAdminEmail.toLowerCase());
     
-    if (!isOwnApp || currentAdminRole === 'CHIEF_ADMIN') {
+    if (!isOwnApp || currentAdminRole === 'CHIEF_ADMINISTRATOR') {
         const s = (app.status || '').toUpperCase();
         
-        if (s.includes('REVIEW') || s.includes('UPDATE')) {
+        if (s === 'UNDER_REVIEW') {
             actionsHtml = `
                 <button class="secondary-btn" onclick="openUpdateRequestModal()">Request Document Update</button>
-                <button class="secondary-btn" style="color: var(--danger); border-color: var(--danger);" onclick="updateAppStatus('REJECTED')">Reject</button>
-                <button class="primary-btn" onclick="updateAppStatus('VERIFIED')">Verify Application</button>
+                <button class="secondary-btn" style="color: var(--danger); border-color: var(--danger);" onclick="openRejectModal()">Reject</button>
+                <button class="primary-btn" onclick="updateAppStatus('VERIFICATION_PENDING')">Approve & Send OTP</button>
                 <button class="secondary-btn close-modal-btn">Close</button>
             `;
-        } else if (s === 'VERIFIED') {
+        } else if (s === 'VERIFICATION_PENDING') {
             actionsHtml = `
-                <button class="primary-btn" onclick="updateAppStatus('CONFIRMED')">Confirm Membership</button>
+                <span style="color: var(--text-light); margin-right: 15px;">Waiting for applicant email reply (48 hrs)...</span>
                 <button class="secondary-btn close-modal-btn">Close</button>
             `;
-        }
-        
-        if (currentAdminRole === 'CHIEF_ADMIN') {
-            actionsHtml = `<button class="secondary-btn" style="background: var(--danger); color: white;" onclick="deleteApplication('${app.id}')"><i class="fa-solid fa-trash"></i> Delete</button>` + actionsHtml;
+        } else if (s === 'NEEDS_CLARIFICATION') {
+            actionsHtml = `
+                <span style="color: var(--text-light); margin-right: 15px;">Waiting for applicant to upload document...</span>
+                <button class="secondary-btn close-modal-btn">Close</button>
+            `;
         }
     } else {
         actionsHtml = `<span style="color: var(--text-light); margin-right: 15px;">You cannot approve your own application.</span>` + actionsHtml;
@@ -435,7 +489,6 @@ function openAppDetail(appId) {
     
     document.getElementById('app-detail-actions').innerHTML = actionsHtml;
     
-    // Re-bind close buttons dynamically created
     document.querySelectorAll('#app-detail-actions .close-modal-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.getElementById('modal-app-detail').classList.remove('active');
@@ -445,11 +498,12 @@ function openAppDetail(appId) {
     document.getElementById('modal-app-detail').classList.add('active');
 }
 
-async function updateAppStatus(newStatus, notes = '') {
+async function updateAppStatus(newStatus, reason = '', docType = '') {
     if (!confirm(`Are you sure you want to change status to ${newStatus}?`)) return;
     
     document.getElementById('modal-app-detail').classList.remove('active');
     document.getElementById('modal-request-update').classList.remove('active');
+    document.getElementById('modal-reject-reason').classList.remove('active');
     
     try {
         const res = await sendBackendRequest({
@@ -457,7 +511,8 @@ async function updateAppStatus(newStatus, notes = '') {
             sessionToken: currentSessionToken,
             applicationId: currentAppInModal.id,
             newStatus: newStatus,
-            rejectionReason: notes
+            rejectionReason: reason,
+            updateDocType: docType
         });
         
         if (res.success) {
@@ -471,11 +526,25 @@ async function updateAppStatus(newStatus, notes = '') {
     }
 }
 
+function openRejectModal() {
+    document.getElementById('modal-app-detail').classList.remove('active');
+    document.getElementById('rejection-reason-text').value = '';
+    document.getElementById('modal-reject-reason').classList.add('active');
+}
+
+function handleSubmitReject() {
+    const reason = document.getElementById('rejection-reason-text').value.trim();
+    if (!reason) {
+        alert('Please provide a reason for rejection.');
+        return;
+    }
+    updateAppStatus('REJECTED', reason);
+}
+
 function openUpdateRequestModal() {
     document.getElementById('modal-app-detail').classList.remove('active');
     document.getElementById('update-doc-reason').value = '';
     
-    // Hide EFRO option if Alumni
     const select = document.getElementById('update-doc-type');
     if (currentAppInModal.type === 'ALUMNI') {
         Array.from(select.options).forEach(opt => {
@@ -496,33 +565,29 @@ function handleSubmitUpdateRequest() {
         alert('Please provide instructions/reason.');
         return;
     }
-    updateAppStatus('NEEDS_CLARIFICATION', `Document: ${docType}. Reason: ${reason}`);
+    updateAppStatus('NEEDS_CLARIFICATION', reason, docType);
 }
 
-async function deleteApplication(appId) {
-    if (!confirm('WARNING: Are you sure you want to PERMANENTLY delete this application? This action cannot be undone.')) return;
-    
-    document.getElementById('modal-app-detail').classList.remove('active');
-    
+async function handleSyncEmails() {
+    const btn = document.getElementById('btn-sync-emails');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Syncing...';
     try {
-        // The new backend spec does not include deleteApplication
-        /*
         const res = await sendBackendRequest({
-            action: 'deleteApplication',
-            sessionToken: currentSessionToken,
-            appId: appId
+            action: 'processVerificationReplies',
+            sessionToken: currentSessionToken
         });
-        
         if (res.success) {
-            alert('Application deleted successfully.');
+            alert(res.message);
             loadDashboardData();
         } else {
-            alert('Failed to delete: ' + res.message);
+            alert('Sync failed: ' + res.message);
         }
-        */
-        alert("Deleting applications is currently disabled.");
     } catch (e) {
         alert('Network error.');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fa-solid fa-envelope-open-text"></i> Sync Email Replies';
     }
 }
 
@@ -532,8 +597,6 @@ async function deleteApplication(appId) {
 
 async function loadAdministrators() {
     try {
-        // The new backend spec does not include getAdministrators
-        /*
         const res = await sendBackendRequest({
             action: 'getAdministrators',
             sessionToken: currentSessionToken
@@ -543,7 +606,6 @@ async function loadAdministrators() {
             cachedAdministrators = res.administrators || [];
             renderAdministrators();
         }
-        */
     } catch (e) {
         console.error('Failed to load admins', e);
     }
@@ -552,6 +614,8 @@ async function loadAdministrators() {
 function renderAdministrators() {
     const tbody = document.getElementById('admins-tbody');
     tbody.innerHTML = '';
+    
+    let activeCoAdmins = 0;
     
     if (cachedAdministrators.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No administrators found.</td></tr>';
@@ -562,27 +626,59 @@ function renderAdministrators() {
         const tr = document.createElement('tr');
         const isActive = admin.status === 'ACTIVE';
         
+        if (admin.role === 'CO_ADMINISTRATOR' && isActive) {
+            activeCoAdmins++;
+        }
+        
         let actionBtn = '';
-        if (isActive && admin.email.toLowerCase() !== currentAdminEmail.toLowerCase()) {
-            actionBtn = `<button class="secondary-btn" style="color: var(--danger); border-color: var(--danger); padding: 5px 10px;" onclick="deactivateAdmin('${admin.email}')">Deactivate</button>`;
+        if (admin.role !== 'CHIEF_ADMINISTRATOR') {
+            if (isActive) {
+                actionBtn = `<button class="secondary-btn" style="color: var(--danger); border-color: var(--danger); padding: 5px 10px;" onclick="deactivateAdmin('${admin.email}')">Deactivate</button>`;
+            } else {
+                actionBtn = `<button class="primary-btn" style="padding: 5px 10px;" onclick="reactivateAdmin('${admin.email}')">Reactivate</button>`;
+            }
         }
 
         tr.innerHTML = `
             <td>${admin.name}</td>
             <td>${admin.email}</td>
-            <td><span class="badge ${admin.role === 'CHIEF_ADMIN' ? 'chief' : ''}">${admin.role.replace('_', ' ')}</span></td>
-            <td>${isActive ? '<span style="color: green; font-weight: bold;">ACTIVE</span>' : '<span style="color: red; font-weight: bold;">INACTIVE</span>'}</td>
+            <td><span class="badge ${admin.role === 'CHIEF_ADMINISTRATOR' ? 'chief' : 'co-admin'}">${admin.role.replace('_', ' ')}</span></td>
+            <td>${isActive ? '<span style="color: green; font-weight: bold;">ACTIVE</span>' : '<span style="color: red; font-weight: bold;">DEACTIVATED</span>'}</td>
             <td>${admin.addedDate || ''}</td>
             <td>${actionBtn}</td>
         `;
         tbody.appendChild(tr);
     });
+    
+    // Add counter below table
+    const tableContainer = tbody.parentElement.parentElement;
+    let counterInfo = document.getElementById('co-admin-counter');
+    if (!counterInfo) {
+        counterInfo = document.createElement('div');
+        counterInfo.id = 'co-admin-counter';
+        counterInfo.style.marginTop = '15px';
+        counterInfo.style.fontSize = '16px';
+        tableContainer.appendChild(counterInfo);
+    }
+    
+    const countColor = activeCoAdmins >= 3 ? 'var(--error)' : 'var(--primary)';
+    counterInfo.innerHTML = `<strong>Active Co-Administrators: <span style="color: ${countColor};">${activeCoAdmins} / 3</span></strong>`;
+    
+    const addBtn = document.getElementById('btn-add-admin-modal');
+    if (activeCoAdmins >= 3) {
+        addBtn.disabled = true;
+        addBtn.style.opacity = '0.5';
+        addBtn.title = 'Maximum of 3 active co-administrators reached.';
+    } else {
+        addBtn.disabled = false;
+        addBtn.style.opacity = '1';
+        addBtn.title = '';
+    }
 }
 
 async function handleAddAdmin() {
     const name = document.getElementById('new-admin-name').value.trim();
     const newEmail = document.getElementById('new-admin-email').value.trim();
-    const role = document.getElementById('new-admin-role').value;
     const errorEl = document.getElementById('add-admin-error');
     
     if (!name || !newEmail) {
@@ -594,14 +690,11 @@ async function handleAddAdmin() {
     errorEl.textContent = 'Adding...';
     
     try {
-        // The new backend spec does not include addAdministrator
-        /*
         const res = await sendBackendRequest({
             action: 'addAdministrator',
             sessionToken: currentSessionToken,
             newName: name,
-            newEmail: newEmail,
-            newRole: role
+            newEmail: newEmail
         });
         
         if (res.success) {
@@ -613,8 +706,6 @@ async function handleAddAdmin() {
         } else {
             errorEl.textContent = res.message || 'Failed to add administrator.';
         }
-        */
-        errorEl.textContent = 'Adding administrators via the dashboard is currently disabled. Please add them directly to the Google Sheet.';
     } catch (e) {
         errorEl.textContent = 'Network error.';
     } finally {
@@ -626,8 +717,6 @@ async function deactivateAdmin(targetEmail) {
     if (!confirm(`Are you sure you want to deactivate ${targetEmail}?`)) return;
     
     try {
-        // The new backend spec does not include deactivateAdministrator
-        /*
         const res = await sendBackendRequest({
             action: 'deactivateAdministrator',
             sessionToken: currentSessionToken,
@@ -639,8 +728,26 @@ async function deactivateAdmin(targetEmail) {
         } else {
             alert('Failed to deactivate: ' + res.message);
         }
-        */
-        alert("Deactivating administrators via the dashboard is currently disabled. Please do it directly in the Google Sheet.");
+    } catch (e) {
+        alert('Network error.');
+    }
+}
+
+async function reactivateAdmin(targetEmail) {
+    if (!confirm(`Are you sure you want to reactivate ${targetEmail}?`)) return;
+    
+    try {
+        const res = await sendBackendRequest({
+            action: 'reactivateAdministrator',
+            sessionToken: currentSessionToken,
+            targetEmail: targetEmail
+        });
+        
+        if (res.success) {
+            loadAdministrators();
+        } else {
+            alert('Failed to reactivate: ' + res.message);
+        }
     } catch (e) {
         alert('Network error.');
     }

@@ -82,7 +82,13 @@
                 <div id="panel-dashboard" class="dashboard-panel active">
                     <div class="panel-header">
                         <h2>Database Summary</h2>
-                        <button id="btn-refresh-stats" class="secondary-btn"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                        <div style="display:flex; gap:10px;">
+                            <select id="stats-display-mode" class="admin-select" style="width: auto;">
+                                <option value="NUMBER">Number Mode</option>
+                                <option value="PERCENTAGE">Percentage Mode</option>
+                            </select>
+                            <button id="btn-refresh-stats" class="secondary-btn"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                        </div>
                     </div>
                     <div class="stats-grid" id="stats-grid">
                         <!-- Populated via JS -->
@@ -94,16 +100,19 @@
                 <div id="panel-applications" class="dashboard-panel">
                     <div class="panel-header">
                         <h2>Membership Applications</h2>
-                        <button id="btn-refresh-apps" class="secondary-btn"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                        <div style="display:flex; gap:10px;">
+                            <button id="btn-sync-emails" class="primary-btn"><i class="fa-solid fa-envelope-open-text"></i> Sync Email Replies</button>
+                            <button id="btn-refresh-apps" class="secondary-btn"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
+                        </div>
                     </div>
                     <div class="table-controls">
                         <input type="text" id="search-apps" placeholder="Search by name, email, or ID..." class="admin-input">
                         <select id="filter-status" class="admin-select">
                             <option value="ALL">All Statuses</option>
                             <option value="UNDER_REVIEW">Under Review</option>
-                            <option value="DOCUMENT UPDATE REQUIRED">Document Update Required</option>
-                            <option value="VERIFIED">Verified</option>
-                            <option value="CONFIRMED">Confirmed</option>
+                            <option value="NEEDS_CLARIFICATION">Needs Clarification</option>
+                            <option value="VERIFICATION_PENDING">Verification Pending</option>
+                            <option value="MEMBER_CONFIRMED">Member Confirmed</option>
                             <option value="REJECTED">Rejected</option>
                         </select>
                     </div>
@@ -199,6 +208,27 @@
         </div>
     </div>
 
+    <!-- Rejection Reason Modal -->
+    <div id="modal-reject-reason" class="admin-modal-overlay">
+        <div class="admin-modal">
+            <div class="modal-header">
+                <h3>Reject Application</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p>Please provide a reason for rejecting this application. This will be sent to the applicant.</p>
+                <div class="form-group">
+                    <label>Rejection Reason <span class="required">*</span></label>
+                    <textarea id="rejection-reason-text" class="admin-input" rows="4" placeholder="e.g. Information could not be verified..."></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn close-modal-btn">Cancel</button>
+                <button id="btn-submit-reject" class="primary-btn" style="background-color: var(--error);">Confirm Rejection</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Add Admin Modal -->
     <div id="modal-add-admin" class="admin-modal-overlay">
         <div class="admin-modal">
@@ -217,10 +247,7 @@
                 </div>
                 <div class="form-group">
                     <label>Role</label>
-                    <select id="new-admin-role" class="admin-select">
-                        <option value="ADMINISTRATOR">Administrator</option>
-                        <option value="CHIEF_ADMIN">Chief Administrator</option>
-                    </select>
+                    <input type="text" class="admin-input" value="Co-Administrator" disabled>
                 </div>
                 <div class="error-msg" id="add-admin-error"></div>
             </div>

@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Update - LSUO</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="../style.css">
+    <link rel="stylesheet" href="update.css">
+    <link rel="icon" type="image/jpeg" href="../assets/images/Logo.jpg" />
+</head>
+<body>
+    <div class="update-container">
+        <div class="brand-header">
+            <img class="brand-icon" src="../assets/images/Logo.jpg" alt="LSUO logo" />
+            <h2>Document Update Required</h2>
+        </div>
+        
+        <div id="loading-view" class="view-state active">
+            <i class="fa-solid fa-spinner fa-spin fa-3x" style="color: var(--primary);"></i>
+            <p style="margin-top: 15px;">Verifying secure link...</p>
+        </div>
+
+        <div id="error-view" class="view-state" style="display: none;">
+            <i class="fa-solid fa-circle-exclamation fa-3x" style="color: var(--error);"></i>
+            <h3 style="margin-top: 15px;">Invalid or Expired Link</h3>
+            <p id="error-message" style="margin-top: 10px;">This document update link is invalid or has expired.</p>
+            <a href="../index.html" class="primary-btn" style="display: inline-block; margin-top: 20px; text-decoration: none;">Return Home</a>
+        </div>
+
+        <div id="form-view" class="view-state" style="display: none;">
+            <div class="info-card">
+                <p><strong>Application ID:</strong> <span id="app-id-display">Loading...</span></p>
+                <p><strong>Requested Document:</strong> <span id="doc-type-display" class="highlight-doc">Loading...</span></p>
+                <p><strong>Reason for Update:</strong></p>
+                <div class="reason-box" id="reason-display">Loading...</div>
+            </div>
+
+            <form id="update-form">
+                <div class="form-group">
+                    <label for="replacement-file">Upload Replacement Document <span class="required">*</span></label>
+                    <input type="file" id="replacement-file" required>
+                    <small id="file-hint">PDF or JPG only, max 5MB.</small>
+                </div>
+                
+                <div id="upload-error" class="error-msg"></div>
+                <button type="submit" id="btn-submit" class="primary-btn full-width">
+                    <i class="fa-solid fa-cloud-arrow-up"></i> Upload Replacement Document
+                </button>
+            </form>
+        </div>
+
+        <div id="success-view" class="view-state" style="display: none;">
+            <i class="fa-solid fa-circle-check fa-3x" style="color: var(--success);"></i>
+            <h3 style="margin-top: 15px;">Upload Successful</h3>
+            <p style="margin-top: 10px;">Your replacement document has been securely uploaded and attached to your application.</p>
+            <p style="margin-top: 10px;">The administration team will review it shortly.</p>
+            <a href="../index.html" class="primary-btn" style="display: inline-block; margin-top: 20px; text-decoration: none;">Return Home</a>
+        </div>
+    </div>
+    
+    <script src="update.js"></script>
+</body>
+</html>
