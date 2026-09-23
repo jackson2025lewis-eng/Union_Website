@@ -209,7 +209,7 @@ function showDashboard() {
     document.getElementById('current-admin-name').textContent = currentAdminName;
     const roleBadge = document.getElementById('current-admin-role');
     roleBadge.textContent = currentAdminRole.replace('_', ' ');
-    if (currentAdminRole === 'CHIEF_ADMIN') {
+    if (currentAdminRole === 'CHIEF_ADMINISTRATOR' || currentAdminRole === 'CHIEF_ADMIN') {
         roleBadge.classList.add('chief');
         document.querySelectorAll('.chief-only').forEach(el => el.style.display = '');
     }
@@ -236,7 +236,7 @@ async function loadDashboardData() {
                     type: row['Membership Type'] || '',
                     status: row['Application Status'] || '',
                     date: row['Submission Date'] || '',
-                    email: row['Email'] || '',
+                    email: row['Email'] || row['Applicant Email'] || '',
                     gender: row['Gender'] || '',
                     dob: row['Date of Birth'] || '',
                     passportNo: row['Passport Number'] || '',
@@ -254,7 +254,7 @@ async function loadDashboardData() {
             renderStats(res.statistics);
             renderApplications();
             
-            if (currentAdminRole === 'CHIEF_ADMIN') {
+            if (currentAdminRole === 'CHIEF_ADMINISTRATOR' || currentAdminRole === 'CHIEF_ADMIN') {
                 loadAdministrators();
             }
         } else {
@@ -326,7 +326,12 @@ function renderStats(stats) {
 
     container.innerHTML = `
         <h3 style="margin-bottom: 15px; color: var(--primary);">CURRENT STUDENTS</h3>
-        <div class="stats-grid" style="margin-bottom: 20px;">
+        <h4 style="margin-bottom: 10px;">University Statistics</h4>
+        <div style="margin-bottom: 20px;">
+            ${renderUniversities(cs.universities)}
+        </div>
+        <h4 style="margin-bottom: 10px;">Overall Statistics</h4>
+        <div class="stats-grid" style="margin-bottom: 30px;">
             <div class="stat-card"><h3>${cs.total || 0}</h3><p>Total</p></div>
             <div class="stat-card"><h3>${cs.male || 0}</h3><p>Male</p></div>
             <div class="stat-card"><h3>${cs.female || 0}</h3><p>Female</p></div>
@@ -334,23 +339,20 @@ function renderStats(stats) {
             <div class="stat-card"><h3>${cs.masters || 0}</h3><p>Master's</p></div>
             <div class="stat-card"><h3>${cs.phd || 0}</h3><p>PHD</p></div>
         </div>
-        <h4 style="margin-bottom: 10px;">University Statistics</h4>
-        <div style="margin-bottom: 30px;">
-            ${renderUniversities(cs.universities)}
-        </div>
 
         <h3 style="margin-bottom: 15px; color: var(--primary);">ALUMNI</h3>
-        <div class="stats-grid" style="margin-bottom: 20px;">
+        <h4 style="margin-bottom: 10px;">University Statistics</h4>
+        <div style="margin-bottom: 20px;">
+            ${renderUniversities(al.universities)}
+        </div>
+        <h4 style="margin-bottom: 10px;">Overall Statistics</h4>
+        <div class="stats-grid" style="margin-bottom: 30px;">
             <div class="stat-card"><h3>${al.total || 0}</h3><p>Total</p></div>
             <div class="stat-card"><h3>${al.male || 0}</h3><p>Male</p></div>
             <div class="stat-card"><h3>${al.female || 0}</h3><p>Female</p></div>
             <div class="stat-card"><h3>${al.bachelor || 0}</h3><p>Bachelor</p></div>
             <div class="stat-card"><h3>${al.masters || 0}</h3><p>Master's</p></div>
             <div class="stat-card"><h3>${al.phd || 0}</h3><p>PHD</p></div>
-        </div>
-        <h4 style="margin-bottom: 10px;">University Statistics</h4>
-        <div style="margin-bottom: 30px;">
-            ${renderUniversities(al.universities)}
         </div>
     `;
 }
