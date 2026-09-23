@@ -169,6 +169,7 @@ async function handleVerifyOTP() {
             sessionStorage.setItem('adminRole', res.role);
             sessionStorage.setItem('adminName', res.name);
             
+            currentSessionToken = res.sessionToken;
             currentAdminEmail = email;
             currentAdminRole = res.role;
             currentAdminName = res.name;
