@@ -1,6 +1,7 @@
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-5lgnRpg0hSmcdq_GTGNv43cHzKsCWZJLSeU10ofbFyccg1868xgj6B37KfS_plv7/exec';
 
 // State
+let currentSessionToken = sessionStorage.getItem('adminSessionToken') || null;
 let currentAdminEmail = sessionStorage.getItem('adminEmail') || null;
 let currentAdminRole = sessionStorage.getItem('adminRole') || null;
 let currentAdminName = sessionStorage.getItem('adminName') || null;
@@ -16,7 +17,14 @@ const loginLoading = document.getElementById('login-loading');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    if (currentAdminEmail && currentAdminRole) {
+    // If the page was reloaded, return to the public homepage
+    if (performance.navigation.type === 1) {
+        sessionStorage.clear();
+        window.location.href = '../index.html';
+        return;
+    }
+
+    if (currentSessionToken && currentAdminEmail && currentAdminRole) {
         showDashboard();
     } else {
         loginView.classList.add('active');
@@ -36,10 +44,15 @@ function setupEventListeners() {
     });
 
     // Logout
-    document.getElementById('btn-logout').addEventListener('click', (e) => {
+    document.getElementById('btn-logout').addEventListener('click', async (e) => {
         e.preventDefault();
+        if (currentSessionToken) {
+            try {
+                await sendBackendRequest({ action: 'logoutAdministrator', sessionToken: currentSessionToken });
+            } catch (err) {}
+        }
         sessionStorage.clear();
-        window.location.reload();
+        window.location.href = '../index.html';
     });
 
     // Navigation
@@ -151,6 +164,7 @@ async function handleVerifyOTP() {
         
         if (res.success) {
             // Success! Store session
+            sessionStorage.setItem('adminSessionToken', res.sessionToken);
             sessionStorage.setItem('adminEmail', email);
             sessionStorage.setItem('adminRole', res.role);
             sessionStorage.setItem('adminName', res.name);
@@ -196,14 +210,36 @@ async function loadDashboardData() {
     
     try {
         const res = await sendBackendRequest({ 
-            action: 'getAdminDashboardData', 
-            email: currentAdminEmail, 
-            role: currentAdminRole 
+            action: 'getDashboardData', 
+            sessionToken: currentSessionToken 
         });
         
         if (res.success) {
-            cachedApplications = res.applications || [];
-            renderStats(res.stats);
+            cachedApplications = (res.applications || []).map(row => {
+                // Map the spreadsheet headers to frontend expected properties
+                return {
+                    ...row,
+                    id: row['Application ID'] || row.applicationId,
+                    name: (row['First Name'] || '') + ' ' + (row['Last Name'] || ''),
+                    type: row['Membership Type'] || '',
+                    status: row['Application Status'] || '',
+                    date: row['Submission Date'] || '',
+                    email: row['Email'] || '',
+                    gender: row['Gender'] || '',
+                    dob: row['Date of Birth'] || '',
+                    passportNo: row['Passport Number'] || '',
+                    mobile: row['Mobile Number'] || '',
+                    whatsapp: row['WhatsApp Number'] || '',
+                    university: row['University'] || '',
+                    degree: row['Degree Type'] || '',
+                    studyFrom: row['Study From'] || '',
+                    studyTo: row['Study To'] || '',
+                    passportDocUrl: row['Passport Document'] || '',
+                    passportPhotoUrl: row['Passport Photo'] || '',
+                    efroUrl: row['EFRO File'] || ''
+                };
+            });
+            renderStats(res.statistics);
             renderApplications();
             
             if (currentAdminRole === 'CHIEF_ADMIN') {
@@ -219,13 +255,45 @@ async function loadDashboardData() {
 
 function renderStats(stats) {
     if (!stats) return;
-    const grid = document.getElementById('stats-grid');
-    grid.innerHTML = `
-        <div class="stat-card"><h3>${stats.total || 0}</h3><p>Total Applications</p></div>
-        <div class="stat-card"><h3>${stats.underReview || 0}</h3><p>Under Review</p></div>
-        <div class="stat-card"><h3>${stats.updateRequired || 0}</h3><p>Update Required</p></div>
-        <div class="stat-card"><h3>${stats.verified || 0}</h3><p>Verified</p></div>
-        <div class="stat-card"><h3>${stats.confirmed || 0}</h3><p>Confirmed Members</p></div>
+    
+    // We will replace the stats grid with two separate sections.
+    const panel = document.getElementById('panel-dashboard');
+    // Find the stats-grid or create it if missing
+    let container = document.getElementById('stats-container');
+    if (!container) {
+        const oldGrid = document.getElementById('stats-grid');
+        if (oldGrid) {
+            container = document.createElement('div');
+            container.id = 'stats-container';
+            oldGrid.parentNode.replaceChild(container, oldGrid);
+        } else {
+            return;
+        }
+    }
+    
+    const cs = stats.currentStudents || {};
+    const al = stats.alumni || {};
+
+    container.innerHTML = `
+        <h3 style="margin-bottom: 15px; color: var(--primary);">Current Students</h3>
+        <div class="stats-grid" style="margin-bottom: 30px;">
+            <div class="stat-card"><h3>${cs.total || 0}</h3><p>Total</p></div>
+            <div class="stat-card"><h3>${cs.male || 0}</h3><p>Male</p></div>
+            <div class="stat-card"><h3>${cs.female || 0}</h3><p>Female</p></div>
+            <div class="stat-card"><h3>${cs.bachelorCandidate || 0}</h3><p>Bachelor Candidates</p></div>
+            <div class="stat-card"><h3>${cs.masters || 0}</h3><p>Master's</p></div>
+            <div class="stat-card"><h3>${cs.phd || 0}</h3><p>PHD</p></div>
+        </div>
+
+        <h3 style="margin-bottom: 15px; color: var(--primary);">Alumni</h3>
+        <div class="stats-grid">
+            <div class="stat-card"><h3>${al.total || 0}</h3><p>Total</p></div>
+            <div class="stat-card"><h3>${al.male || 0}</h3><p>Male</p></div>
+            <div class="stat-card"><h3>${al.female || 0}</h3><p>Female</p></div>
+            <div class="stat-card"><h3>${al.bachelor || 0}</h3><p>Bachelor</p></div>
+            <div class="stat-card"><h3>${al.masters || 0}</h3><p>Master's</p></div>
+            <div class="stat-card"><h3>${al.phd || 0}</h3><p>PHD</p></div>
+        </div>
     `;
 }
 
@@ -385,11 +453,10 @@ async function updateAppStatus(newStatus, notes = '') {
     try {
         const res = await sendBackendRequest({
             action: 'updateApplicationStatus',
-            email: currentAdminEmail,
-            role: currentAdminRole,
-            appId: currentAppInModal.id,
+            sessionToken: currentSessionToken,
+            applicationId: currentAppInModal.id,
             newStatus: newStatus,
-            notes: notes
+            rejectionReason: notes
         });
         
         if (res.success) {
@@ -428,7 +495,7 @@ function handleSubmitUpdateRequest() {
         alert('Please provide instructions/reason.');
         return;
     }
-    updateAppStatus('DOCUMENT UPDATE REQUIRED', `Document: ${docType}. Reason: ${reason}`);
+    updateAppStatus('NEEDS_CLARIFICATION', `Document: ${docType}. Reason: ${reason}`);
 }
 
 async function deleteApplication(appId) {
@@ -437,10 +504,11 @@ async function deleteApplication(appId) {
     document.getElementById('modal-app-detail').classList.remove('active');
     
     try {
+        // The new backend spec does not include deleteApplication
+        /*
         const res = await sendBackendRequest({
             action: 'deleteApplication',
-            email: currentAdminEmail,
-            role: currentAdminRole,
+            sessionToken: currentSessionToken,
             appId: appId
         });
         
@@ -450,6 +518,8 @@ async function deleteApplication(appId) {
         } else {
             alert('Failed to delete: ' + res.message);
         }
+        */
+        alert("Deleting applications is currently disabled.");
     } catch (e) {
         alert('Network error.');
     }
@@ -461,16 +531,18 @@ async function deleteApplication(appId) {
 
 async function loadAdministrators() {
     try {
+        // The new backend spec does not include getAdministrators
+        /*
         const res = await sendBackendRequest({
             action: 'getAdministrators',
-            email: currentAdminEmail,
-            role: currentAdminRole
+            sessionToken: currentSessionToken
         });
         
         if (res.success) {
             cachedAdministrators = res.administrators || [];
             renderAdministrators();
         }
+        */
     } catch (e) {
         console.error('Failed to load admins', e);
     }
@@ -521,10 +593,11 @@ async function handleAddAdmin() {
     errorEl.textContent = 'Adding...';
     
     try {
+        // The new backend spec does not include addAdministrator
+        /*
         const res = await sendBackendRequest({
             action: 'addAdministrator',
-            email: currentAdminEmail,
-            role: currentAdminRole,
+            sessionToken: currentSessionToken,
             newName: name,
             newEmail: newEmail,
             newRole: role
@@ -539,6 +612,8 @@ async function handleAddAdmin() {
         } else {
             errorEl.textContent = res.message || 'Failed to add administrator.';
         }
+        */
+        errorEl.textContent = 'Adding administrators via the dashboard is currently disabled. Please add them directly to the Google Sheet.';
     } catch (e) {
         errorEl.textContent = 'Network error.';
     } finally {
@@ -550,10 +625,11 @@ async function deactivateAdmin(targetEmail) {
     if (!confirm(`Are you sure you want to deactivate ${targetEmail}?`)) return;
     
     try {
+        // The new backend spec does not include deactivateAdministrator
+        /*
         const res = await sendBackendRequest({
             action: 'deactivateAdministrator',
-            email: currentAdminEmail,
-            role: currentAdminRole,
+            sessionToken: currentSessionToken,
             targetEmail: targetEmail
         });
         
@@ -562,6 +638,8 @@ async function deactivateAdmin(targetEmail) {
         } else {
             alert('Failed to deactivate: ' + res.message);
         }
+        */
+        alert("Deactivating administrators via the dashboard is currently disabled. Please do it directly in the Google Sheet.");
     } catch (e) {
         alert('Network error.');
     }
