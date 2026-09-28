@@ -43,6 +43,33 @@ function setupEventListeners() {
         document.getElementById('admin-otp').value = '';
     });
 
+    // Mobile Sidebar Drawer
+    const sidebarToggle = document.getElementById('sidebarToggle');
+    const adminSidebar = document.getElementById('admin-sidebar');
+    const sidebarOverlay = document.getElementById('sidebar-overlay');
+    const closeSidebarBtn = document.getElementById('closeSidebarBtn');
+
+    if (sidebarToggle && adminSidebar) {
+        sidebarToggle.addEventListener('click', () => {
+            adminSidebar.classList.toggle('open');
+            if (sidebarOverlay) sidebarOverlay.classList.toggle('active');
+        });
+    }
+
+    if (closeSidebarBtn && adminSidebar) {
+        closeSidebarBtn.addEventListener('click', () => {
+            adminSidebar.classList.remove('open');
+            if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+        });
+    }
+
+    if (sidebarOverlay && adminSidebar) {
+        sidebarOverlay.addEventListener('click', () => {
+            adminSidebar.classList.remove('open');
+            sidebarOverlay.classList.remove('active');
+        });
+    }
+
     // Logout
     document.getElementById('btn-logout').addEventListener('click', async (e) => {
         e.preventDefault();
@@ -64,12 +91,31 @@ function setupEventListeners() {
             
             e.currentTarget.classList.add('active');
             document.getElementById(e.currentTarget.dataset.target).classList.add('active');
+
+            if (window.innerWidth <= 768 && adminSidebar) {
+                adminSidebar.classList.remove('open');
+                if (sidebarOverlay) sidebarOverlay.classList.remove('active');
+            }
         });
     });
 
-    // Refresh Buttons
-    document.getElementById('btn-refresh-apps').addEventListener('click', loadDashboardData);
-    document.getElementById('btn-refresh-stats').addEventListener('click', loadDashboardData);
+    // Refresh Buttons with interactive feedback
+    const handleRefresh = async (btnId) => {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
+        const icon = btn.querySelector('i');
+        if (icon) icon.classList.add('fa-spin');
+        btn.disabled = true;
+        try {
+            await loadDashboardData();
+        } finally {
+            if (icon) icon.classList.remove('fa-spin');
+            btn.disabled = false;
+        }
+    };
+
+    document.getElementById('btn-refresh-apps').addEventListener('click', () => handleRefresh('btn-refresh-apps'));
+    document.getElementById('btn-refresh-stats').addEventListener('click', () => handleRefresh('btn-refresh-stats'));
 
     // Filters
     document.getElementById('search-apps').addEventListener('input', renderApplications);
@@ -206,12 +252,27 @@ function showDashboard() {
     loginView.classList.remove('active');
     dashboardView.classList.add('active');
     
-    document.getElementById('current-admin-name').textContent = currentAdminName;
-    const roleBadge = document.getElementById('current-admin-role');
-    roleBadge.textContent = currentAdminRole.replace('_', ' ');
-    if (currentAdminRole === 'CHIEF_ADMINISTRATOR' || currentAdminRole === 'CHIEF_ADMIN') {
-        roleBadge.classList.add('chief');
+    // Update Role Illustration Badge in upper RH corner
+    const roleBadgeText = document.getElementById('current-admin-role-display');
+    const badgeContainer = document.getElementById('admin-role-badge');
+    const isChief = (currentAdminRole === 'CHIEF_ADMINISTRATOR' || currentAdminRole === 'CHIEF_ADMIN');
+    
+    if (roleBadgeText) {
+        roleBadgeText.textContent = isChief ? 'Chief Administrator' : 'Co-Administrator';
+    }
+    
+    if (badgeContainer) {
+        badgeContainer.className = 'admin-role-badge-wrapper ' + (isChief ? 'chief-badge' : 'coadmin-badge');
+        const badgeIcon = badgeContainer.querySelector('i');
+        if (badgeIcon) {
+            badgeIcon.className = isChief ? 'fa-solid fa-shield-halved' : 'fa-solid fa-user-shield';
+        }
+    }
+
+    if (isChief) {
         document.querySelectorAll('.chief-only').forEach(el => el.style.display = '');
+    } else {
+        document.querySelectorAll('.chief-only').forEach(el => el.style.display = 'none');
     }
 
     loadDashboardData();
@@ -267,6 +328,14 @@ async function loadDashboardData() {
 
 let lastStatsData = null;
 
+function normalizeUniInitial(name) {
+    const n = (name || '').toUpperCase();
+    if (n.includes('SOA') || n.includes('ANUSANDHAN')) return 'SOA';
+    if (n.includes('KIIT') || n.includes('KALINGA')) return 'KIIT';
+    if (n.includes('RAMAN') || n.includes('CVR')) return 'CV Raman';
+    return name.trim();
+}
+
 function renderStats(stats) {
     if (stats) lastStatsData = stats;
     else if (lastStatsData) stats = lastStatsData;
@@ -274,86 +343,242 @@ function renderStats(stats) {
     
     const mode = document.getElementById('stats-display-mode') ? document.getElementById('stats-display-mode').value : 'NUMBER';
     
-    let container = document.getElementById('stats-container');
-    if (!container) {
-        const oldGrid = document.getElementById('stats-grid');
-        if (oldGrid) {
-            container = document.createElement('div');
-            container.id = 'stats-container';
-            oldGrid.parentNode.replaceChild(container, oldGrid);
-        } else return;
-    }
-
-    const renderDegreeBlock = (title, data) => {
-        if (!data || data.total === 0) return '';
-        let mVal = data.male, fVal = data.female, tVal = data.total;
-        let mLabel = '', fLabel = '', tLabel = '';
-        if (mode === 'PERCENTAGE') {
-            mVal = ((data.male / data.total) * 100).toFixed(1) + '%';
-            fVal = ((data.female / data.total) * 100).toFixed(1) + '%';
-            tVal = '100%';
-        }
-        return `
-            <div style="margin-left: 20px; margin-bottom: 15px;">
-                <h5 style="color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 5px;">${title}</h5>
-                <div style="display: flex; gap: 15px; margin-top: 10px;">
-                    <div style="flex:1; background: #f9f9f9; padding: 10px; border-radius: 4px;"><strong>Male:</strong> ${mVal}</div>
-                    <div style="flex:1; background: #f9f9f9; padding: 10px; border-radius: 4px;"><strong>Female:</strong> ${fVal}</div>
-                    <div style="flex:1; background: #f9f9f9; padding: 10px; border-radius: 4px;"><strong>Total:</strong> ${tVal}</div>
-                </div>
-            </div>`;
-    };
-
-    const renderUniversities = (unis) => {
-        if (!unis || Object.keys(unis).length === 0) return '<p>No university data.</p>';
-        let html = '';
-        for (const [uniName, degrees] of Object.entries(unis)) {
-            html += `
-                <details style="margin-bottom: 10px; background: white; border: 1px solid var(--border); border-radius: 4px; padding: 10px;">
-                    <summary style="font-weight: bold; cursor: pointer; color: var(--primary); outline: none;">${uniName}</summary>
-                    <div style="margin-top: 15px;">
-                        ${renderDegreeBlock('Bachelor', degrees.Bachelor)}
-                        ${renderDegreeBlock('Master', degrees.Master)}
-                        ${renderDegreeBlock('PHD', degrees.PHD)}
-                    </div>
-                </details>`;
-        }
-        return html;
-    };
+    const container = document.getElementById('stats-container');
+    if (!container) return;
 
     const cs = stats.currentStudents || {};
     const al = stats.alumni || {};
 
-    container.innerHTML = `
-        <h3 style="margin-bottom: 15px; color: var(--primary);">CURRENT STUDENTS</h3>
-        <h4 style="margin-bottom: 10px;">University Statistics</h4>
-        <div style="margin-bottom: 20px;">
-            ${renderUniversities(cs.universities)}
-        </div>
-        <h4 style="margin-bottom: 10px;">Overall Statistics</h4>
-        <div class="stats-grid" style="margin-bottom: 30px;">
-            <div class="stat-card"><h3>${cs.total || 0}</h3><p>Total</p></div>
-            <div class="stat-card"><h3>${cs.male || 0}</h3><p>Male</p></div>
-            <div class="stat-card"><h3>${cs.female || 0}</h3><p>Female</p></div>
-            <div class="stat-card"><h3>${cs.bachelorCandidate || 0}</h3><p>Bachelor Candidates</p></div>
-            <div class="stat-card"><h3>${cs.masters || 0}</h3><p>Master's</p></div>
-            <div class="stat-card"><h3>${cs.phd || 0}</h3><p>PHD</p></div>
-        </div>
+    const csBachelor = cs.bachelorCandidate || cs.bachelor || 0;
+    const csMasters = cs.masters || cs.master || 0;
+    const csPhd = cs.phd || 0;
 
-        <h3 style="margin-bottom: 15px; color: var(--primary);">ALUMNI</h3>
-        <h4 style="margin-bottom: 10px;">University Statistics</h4>
-        <div style="margin-bottom: 20px;">
-            ${renderUniversities(al.universities)}
-        </div>
-        <h4 style="margin-bottom: 10px;">Overall Statistics</h4>
-        <div class="stats-grid" style="margin-bottom: 30px;">
-            <div class="stat-card"><h3>${al.total || 0}</h3><p>Total</p></div>
-            <div class="stat-card"><h3>${al.male || 0}</h3><p>Male</p></div>
-            <div class="stat-card"><h3>${al.female || 0}</h3><p>Female</p></div>
-            <div class="stat-card"><h3>${al.bachelor || 0}</h3><p>Bachelor</p></div>
-            <div class="stat-card"><h3>${al.masters || 0}</h3><p>Master's</p></div>
-            <div class="stat-card"><h3>${al.phd || 0}</h3><p>PHD</p></div>
-        </div>
+    const alBachelor = al.bachelorCandidate || al.bachelor || 0;
+    const alMasters = al.masters || al.master || 0;
+    const alPhd = al.phd || 0;
+
+    const grandTotal = (cs.total || 0) + (al.total || 0);
+    const grandMale = (cs.male || 0) + (al.male || 0);
+    const grandFemale = (cs.female || 0) + (al.female || 0);
+    const grandBachelor = csBachelor + alBachelor;
+    const grandMasters = csMasters + alMasters;
+    const grandPhd = csPhd + alPhd;
+
+    const formatVal = (num, denom) => {
+        const val = num || 0;
+        if (mode === 'PERCENTAGE') {
+            if (!denom || denom === 0) return '0.0%';
+            return ((val / denom) * 100).toFixed(1) + '%';
+        }
+        return val.toLocaleString();
+    };
+
+    // 1. Process University Statistics (Aggregate CS + Alumni by initial)
+    const uniMap = {
+        'SOA': { total: 0, male: 0, female: 0, bachelor: { male: 0, female: 0, total: 0 }, master: { male: 0, female: 0, total: 0 }, phd: { male: 0, female: 0, total: 0 } },
+        'KIIT': { total: 0, male: 0, female: 0, bachelor: { male: 0, female: 0, total: 0 }, master: { male: 0, female: 0, total: 0 }, phd: { male: 0, female: 0, total: 0 } },
+        'CV Raman': { total: 0, male: 0, female: 0, bachelor: { male: 0, female: 0, total: 0 }, master: { male: 0, female: 0, total: 0 }, phd: { male: 0, female: 0, total: 0 } }
+    };
+
+    const addUniDegrees = (target, degrees) => {
+        if (!degrees) return;
+        ['Bachelor', 'Master', 'PHD'].forEach(degKey => {
+            const d = degrees[degKey] || degrees[degKey.toLowerCase()] || {};
+            const m = d.male || 0;
+            const f = d.female || 0;
+            const t = d.total || (m + f);
+            const normKey = degKey === 'PHD' ? 'phd' : degKey.toLowerCase();
+            if (target[normKey]) {
+                target[normKey].male += m;
+                target[normKey].female += f;
+                target[normKey].total += t;
+            }
+            target.male += m;
+            target.female += f;
+            target.total += t;
+        });
+    };
+
+    const processUniSource = (unisObj) => {
+        if (!unisObj) return;
+        for (const [rawName, degs] of Object.entries(unisObj)) {
+            const initial = normalizeUniInitial(rawName);
+            if (!uniMap[initial]) {
+                uniMap[initial] = { total: 0, male: 0, female: 0, bachelor: { male: 0, female: 0, total: 0 }, master: { male: 0, female: 0, total: 0 }, phd: { male: 0, female: 0, total: 0 } };
+            }
+            addUniDegrees(uniMap[initial], degs);
+        }
+    };
+
+    processUniSource(cs.universities);
+    processUniSource(al.universities);
+
+    // Render University Cards
+    let uniCardsHtml = '';
+    for (const [initial, uData] of Object.entries(uniMap)) {
+        const uTotal = uData.total || 0;
+        const uMale = uData.male || 0;
+        const uFemale = uData.female || 0;
+
+        uniCardsHtml += `
+            <div class="university-stat-card">
+                <div class="uni-card-header">
+                    <span class="uni-initials-badge">${initial}</span>
+                    <span class="uni-total-badge">Total: <strong>${formatVal(uTotal, grandTotal)}</strong></span>
+                </div>
+                <div class="uni-gender-row">
+                    <div class="uni-gender-pill">
+                        <span><i class="fa-solid fa-mars" style="color: #2563eb;"></i> Male</span>
+                        <strong>${formatVal(uMale, uTotal)}</strong>
+                    </div>
+                    <div class="uni-gender-pill">
+                        <span><i class="fa-solid fa-venus" style="color: #db2777;"></i> Female</span>
+                        <strong>${formatVal(uFemale, uTotal)}</strong>
+                    </div>
+                </div>
+                <div class="uni-degrees-list">
+                    <div class="uni-degree-item">
+                        <div class="uni-degree-title">Bachelor Degree</div>
+                        <div class="uni-degree-metrics">
+                            <span>Total: <strong>${formatVal(uData.bachelor.total, uTotal)}</strong></span>
+                            <span>M: <strong>${formatVal(uData.bachelor.male, uData.bachelor.total)}</strong></span>
+                            <span>F: <strong>${formatVal(uData.bachelor.female, uData.bachelor.total)}</strong></span>
+                        </div>
+                    </div>
+                    <div class="uni-degree-item">
+                        <div class="uni-degree-title">Master's Degree</div>
+                        <div class="uni-degree-metrics">
+                            <span>Total: <strong>${formatVal(uData.master.total, uTotal)}</strong></span>
+                            <span>M: <strong>${formatVal(uData.master.male, uData.master.total)}</strong></span>
+                            <span>F: <strong>${formatVal(uData.master.female, uData.master.total)}</strong></span>
+                        </div>
+                    </div>
+                    <div class="uni-degree-item">
+                        <div class="uni-degree-title">PhD Degree</div>
+                        <div class="uni-degree-metrics">
+                            <span>Total: <strong>${formatVal(uData.phd.total, uTotal)}</strong></span>
+                            <span>M: <strong>${formatVal(uData.phd.male, uData.phd.total)}</strong></span>
+                            <span>F: <strong>${formatVal(uData.phd.female, uData.phd.total)}</strong></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    container.innerHTML = `
+        <!-- CATEGORY 1: UNIVERSITY STATISTICS -->
+        <section class="stats-category-section">
+            <div class="stats-category-header">
+                <i class="fa-solid fa-building-columns"></i>
+                <h3>University Statistics</h3>
+            </div>
+            <div class="university-cards-grid">
+                ${uniCardsHtml}
+            </div>
+        </section>
+
+        <!-- CATEGORY 2: CURRENT STUDENT STATISTICS -->
+        <section class="stats-category-section">
+            <div class="stats-category-header">
+                <i class="fa-solid fa-user-graduate"></i>
+                <h3>Current Student Statistics</h3>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card highlight">
+                    <div class="metric-value">${formatVal(cs.total, grandTotal)}</div>
+                    <div class="metric-label">Total Current Students</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(cs.male, cs.total)}</div>
+                    <div class="metric-label"><i class="fa-solid fa-mars" style="color: #2563eb;"></i> Male Students</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(cs.female, cs.total)}</div>
+                    <div class="metric-label"><i class="fa-solid fa-venus" style="color: #db2777;"></i> Female Students</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(csBachelor, cs.total)}</div>
+                    <div class="metric-label">Bachelor Candidates</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(csMasters, cs.total)}</div>
+                    <div class="metric-label">Master's Candidates</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(csPhd, cs.total)}</div>
+                    <div class="metric-label">PhD Candidates</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CATEGORY 3: ALUMNI STATISTICS -->
+        <section class="stats-category-section">
+            <div class="stats-category-header">
+                <i class="fa-solid fa-graduation-cap"></i>
+                <h3>Alumni Statistics</h3>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card highlight">
+                    <div class="metric-value">${formatVal(al.total, grandTotal)}</div>
+                    <div class="metric-label">Total Alumni</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(al.male, al.total)}</div>
+                    <div class="metric-label"><i class="fa-solid fa-mars" style="color: #2563eb;"></i> Male Alumni</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(al.female, al.total)}</div>
+                    <div class="metric-label"><i class="fa-solid fa-venus" style="color: #db2777;"></i> Female Alumni</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(alBachelor, al.total)}</div>
+                    <div class="metric-label">Bachelor Degrees</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(alMasters, al.total)}</div>
+                    <div class="metric-label">Master's Degrees</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(alPhd, al.total)}</div>
+                    <div class="metric-label">PhD Degrees</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- CATEGORY 4: OVERALL DATABASE STATISTICS -->
+        <section class="stats-category-section">
+            <div class="stats-category-header">
+                <i class="fa-solid fa-chart-pie"></i>
+                <h3>Overall Database Statistics</h3>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card highlight">
+                    <div class="metric-value">${mode === 'PERCENTAGE' ? '100%' : grandTotal.toLocaleString()}</div>
+                    <div class="metric-label">Total Database Members</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(grandMale, grandTotal)}</div>
+                    <div class="metric-label"><i class="fa-solid fa-mars" style="color: #2563eb;"></i> Overall Male</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(grandFemale, grandTotal)}</div>
+                    <div class="metric-label"><i class="fa-solid fa-venus" style="color: #db2777;"></i> Overall Female</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(grandBachelor, grandTotal)}</div>
+                    <div class="metric-label">Overall Bachelor</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(grandMasters, grandTotal)}</div>
+                    <div class="metric-label">Overall Master's</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value">${formatVal(grandPhd, grandTotal)}</div>
+                    <div class="metric-label">Overall PhD</div>
+                </div>
+            </div>
+        </section>
     `;
 }
 

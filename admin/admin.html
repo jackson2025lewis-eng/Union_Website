@@ -50,9 +50,9 @@
     <!-- Dashboard Interface -->
     <div id="dashboard-view" class="admin-view">
         <header class="page-header" role="banner">
-            <div class="main-nav-row" style="justify-content: space-between;">
-                <div style="display: flex; align-items: center; gap: 15px;">
-                    <button id="sidebarToggle" class="hamburger-btn">
+            <div class="main-nav-row admin-nav-row">
+                <div class="header-left">
+                    <button id="sidebarToggle" class="hamburger-btn" aria-label="Toggle navigation menu">
                         <i class="fa-solid fa-bars"></i>
                     </button>
                     <div class="brand-logo">
@@ -60,15 +60,28 @@
                         <span class="brand-name">LSUO Admin</span>
                     </div>
                 </div>
-                <div class="admin-profile">
-                    <span id="current-admin-name">Administrator</span>
-                    <span id="current-admin-role" class="badge">ROLE</span>
+                <div class="header-center">
+                    <h1 class="header-portal-title">LSU Membership Database</h1>
+                </div>
+                <div class="header-right">
+                    <div class="admin-role-badge-wrapper" id="admin-role-badge">
+                        <div class="role-badge-icon">
+                            <i class="fa-solid fa-shield-halved"></i>
+                        </div>
+                        <span id="current-admin-role-display" class="role-badge-text">Chief Administrator</span>
+                    </div>
                 </div>
             </div>
         </header>
 
+        <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
         <div class="dashboard-layout">
             <aside class="admin-sidebar" id="admin-sidebar">
+                <div class="sidebar-mobile-header">
+                    <span class="sidebar-mobile-title">Navigation</span>
+                    <button id="closeSidebarBtn" class="close-sidebar-btn" aria-label="Close sidebar">&times;</button>
+                </div>
                 <nav class="admin-nav">
                     <a href="#" class="admin-nav-link active" data-target="panel-dashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
                     <a href="#" class="admin-nav-link" data-target="panel-applications"><i class="fa-solid fa-folder-open"></i> Applications</a>
@@ -80,9 +93,11 @@
             <main class="dashboard-content">
                 <!-- Dashboard Reports Panel -->
                 <div id="panel-dashboard" class="dashboard-panel active">
-                    <div class="panel-header">
-                        <h2>Database Summary</h2>
-                        <div style="display:flex; gap:10px;">
+                    <div class="panel-header dashboard-main-header">
+                        <div class="dashboard-title-area">
+                            <h2 class="dashboard-panel-heading">LSU Membership Database</h2>
+                        </div>
+                        <div class="dashboard-actions">
                             <select id="stats-display-mode" class="admin-select" style="width: auto;">
                                 <option value="NUMBER">Number Mode</option>
                                 <option value="PERCENTAGE">Percentage Mode</option>
@@ -90,7 +105,7 @@
                             <button id="btn-refresh-stats" class="secondary-btn"><i class="fa-solid fa-rotate-right"></i> Refresh</button>
                         </div>
                     </div>
-                    <div class="stats-grid" id="stats-grid">
+                    <div id="stats-container">
                         <!-- Populated via JS -->
                         <div class="stat-card"><h3>Loading...</h3></div>
                     </div>
