@@ -1,4 +1,4 @@
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx65PRCECX0_xq-N9cpygnhG24rC0cYfW7V5PCYNMjEDmDSg9zuv3Mfy75QYeEtoLbfGw/exec';
 let updateToken = null;
 let expectedDocType = null;
 
@@ -23,8 +23,18 @@ async function sendBackendRequest(payload) {
             headers: { 'Content-Type': 'text/plain;charset=utf-8' },
             body: JSON.stringify(payload)
         });
-        const result = await response.json();
-        if (!result.success) throw new Error(result.message);
+        const text = await response.text();
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch (parseErr) {
+            console.error("Non-JSON backend response:", text);
+            if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+                throw new Error("Unable to connect to Google Apps Script. Please verify the Web App deployment access settings.");
+            }
+            throw new Error(text || "Invalid response format from server.");
+        }
+        if (!result.success) throw new Error(result.message || "Request failed.");
         return result;
     } catch (error) {
         throw new Error(error.message || 'Network error.');

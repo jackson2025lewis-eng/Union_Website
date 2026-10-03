@@ -1,4 +1,4 @@
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx65PRCECX0_xq-N9cpygnhG24rC0cYfW7V5PCYNMjEDmDSg9zuv3Mfy75QYeEtoLbfGw/exec';
 
 // State
 let currentSessionToken = sessionStorage.getItem('adminSessionToken') || null;
@@ -37,6 +37,18 @@ function setupEventListeners() {
     // Login Flow
     document.getElementById('btn-continue').addEventListener('click', handleCheckAccess);
     document.getElementById('btn-verify').addEventListener('click', handleVerifyOTP);
+    document.getElementById('admin-email').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleCheckAccess();
+        }
+    });
+    document.getElementById('admin-otp').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleVerifyOTP();
+        }
+    });
     document.getElementById('btn-back').addEventListener('click', () => {
         otpStep.style.display = 'none';
         emailStep.style.display = 'block';
@@ -162,7 +174,17 @@ async function sendBackendRequest(payload) {
             },
             body: JSON.stringify(payload)
         });
-        const result = await response.json();
+        const text = await response.text();
+        let result;
+        try {
+            result = JSON.parse(text);
+        } catch (parseErr) {
+            console.error("Non-JSON backend response:", text);
+            if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+                throw new Error("Unable to connect to Google Apps Script. Please verify the Web App deployment has 'Who has access' set to 'Anyone'.");
+            }
+            throw new Error(text || "Invalid response received from server.");
+        }
         return result;
     } catch (error) {
         console.error("Backend request error:", error);
@@ -184,21 +206,20 @@ async function handleCheckAccess() {
     loginLoading.style.display = 'block';
 
     try {
-        const res = await sendBackendRequest({ action: 'checkAdministratorAccess', email });
+        // Direct single-request OTP dispatch: checks admin authorization and sends OTP code in 1 step
+        const otpRes = await sendBackendRequest({ action: 'sendAdministratorOTP', email });
+        loginLoading.style.display = 'none';
         
-        if (res.success && res.authorized) {
-            const otpRes = await sendBackendRequest({ action: 'sendAdministratorOTP', email });
-            loginLoading.style.display = 'none';
-            if (otpRes.success) {
-                otpStep.style.display = 'block';
-            } else {
-                emailStep.style.display = 'block';
-                errorEl.textContent = otpRes.message || 'Failed to send verification code.';
+        if (otpRes.success) {
+            otpStep.style.display = 'block';
+            const otpInput = document.getElementById('admin-otp');
+            if (otpInput) {
+                otpInput.value = '';
+                otpInput.focus();
             }
         } else {
-            loginLoading.style.display = 'none';
             emailStep.style.display = 'block';
-            errorEl.textContent = res.message || 'You are not authorized to access the Administrator Portal.';
+            errorEl.textContent = otpRes.message || 'You are not authorized to access the Administrator Portal.';
         }
     } catch (err) {
         loginLoading.style.display = 'none';

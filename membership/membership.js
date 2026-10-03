@@ -45,7 +45,32 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec';
+    const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx65PRCECX0_xq-N9cpygnhG24rC0cYfW7V5PCYNMjEDmDSg9zuv3Mfy75QYeEtoLbfGw/exec';
+
+    async function sendBackendRequest(payload) {
+        try {
+            const response = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+            const text = await response.text();
+            let result;
+            try {
+                result = JSON.parse(text);
+            } catch (parseErr) {
+                console.error("Non-JSON backend response:", text);
+                if (text.includes("<!DOCTYPE") || text.includes("<html")) {
+                    throw new Error("Unable to connect to Google Apps Script. Please verify the Web App deployment access settings.");
+                }
+                throw new Error(text || "Invalid response format from server.");
+            }
+            return result;
+        } catch (error) {
+            console.error("Backend request error:", error);
+            throw error;
+        }
+    }
 
     // Email Form Submit
     emailForm.addEventListener('submit', async (e) => {
@@ -77,18 +102,10 @@ document.addEventListener('DOMContentLoaded', () => {
         emailInput.parentElement.classList.remove('has-error');
 
         try {
-            const response = await fetch(SCRIPT_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/plain;charset=utf-8'
-                },
-                body: JSON.stringify({
-                    action: 'sendOTP',
-                    email: emailInput.value
-                })
+            const result = await sendBackendRequest({
+                action: 'sendOTP',
+                email: emailInput.value
             });
-            
-            const result = await response.json();
             
             if (result.success || result.status === 'success') {
                 submitBtn.textContent = 'Verification code sent to your email.';
@@ -101,7 +118,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     submitBtn.disabled = false;
                 }, 1500);
             } else {
-                throw new Error(result.message || 'Failed to send OTP.');
+                throw new Error(result.message || 'Failed to send verification code.');
             }
         } catch (error) {
             emailError.textContent = error.message || 'An error occurred. Please try again.';
@@ -192,26 +209,18 @@ document.addEventListener('DOMContentLoaded', () => {
         otpInput.parentElement.classList.remove('has-error');
 
         try {
-            const response = await fetch(SCRIPT_URL, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'text/plain;charset=utf-8'
-                },
-                body: JSON.stringify({
-                    action: 'verifyOTP',
-                    email: formData.email,
-                    otp: otpInput.value
-                })
+            const result = await sendBackendRequest({
+                action: 'verifyOTP',
+                email: formData.email,
+                otp: otpInput.value
             });
-            
-            const result = await response.json();
             
             if (result.success || result.status === 'success') {
                 showView('view-type');
                 submitBtn.textContent = originalBtnText;
                 submitBtn.disabled = false;
             } else {
-                throw new Error(result.message || 'Invalid OTP.');
+                throw new Error(result.message || 'Invalid verification code.');
             }
         } catch (error) {
             otpError.textContent = error.message || 'An error occurred during verification.';
@@ -542,15 +551,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     delete payload.efroFile;
                 }
 
-                const response = await fetch(SCRIPT_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'text/plain;charset=utf-8'
-                    },
-                    body: JSON.stringify(payload)
-                });
-                
-                const result = await response.json();
+                const result = await sendBackendRequest(payload);
                 
                 if (result.success || result.status === 'success') {
                     // Show confirmation
