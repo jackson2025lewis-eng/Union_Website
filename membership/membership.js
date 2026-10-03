@@ -551,11 +551,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (result.success || result.status === 'success') {
                     // Show confirmation
                     formWrapper.innerHTML = `
-                        <div class="card" style="text-align: center; padding: 40px; margin-top: 20px;">
+                        <div class="card" style="text-align: center; padding: 40px 24px; margin-top: 20px;">
                             <i class="fa-solid fa-circle-check" style="font-size: 4rem; color: #10b981; margin-bottom: 20px;"></i>
-                            <h2 style="color: #10b981; margin-bottom: 15px;">Application Submitted!</h2>
-                            <p style="font-size: 1.1rem; color: var(--text-main); line-height: 1.6;">
-                                Your membership application has been successfully submitted and is currently under review. Please check your email for confirmation and further instructions.
+                            <h2 style="color: #10b981; margin-bottom: 15px;">Application Received Successfully!</h2>
+                            <p style="font-size: 1.1rem; color: var(--text-main); line-height: 1.7; max-width: 560px; margin: 0 auto;">
+                                Your membership application has been received successfully and is currently under review. Please constantly check your email for further information regarding your membership status and progress.
                             </p>
                             <button class="btn-primary" style="margin-top: 30px;" onclick="window.location.href='../index.html'">Return to Home</button>
                         </div>

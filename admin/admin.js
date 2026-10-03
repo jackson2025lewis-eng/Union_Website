@@ -732,24 +732,29 @@ async function updateAppStatus(newStatus, reason = '', docType = '') {
     document.getElementById('modal-request-update').classList.remove('active');
     document.getElementById('modal-reject-reason').classList.remove('active');
     
+    const applicantEmail = currentAppInModal ? (currentAppInModal.email || currentAppInModal['Applicant Email'] || currentAppInModal['Email'] || currentAppInModal['Email Address'] || currentAppInModal['Untitled Question'] || '') : '';
+    const applicantName = currentAppInModal ? (currentAppInModal.name || ((currentAppInModal['First Name'] || '') + ' ' + (currentAppInModal['Last Name'] || '')).trim() || 'Applicant') : 'Applicant';
+    
     try {
         const res = await sendBackendRequest({
             action: 'updateApplicationStatus',
             sessionToken: currentSessionToken,
-            applicationId: currentAppInModal.id,
+            applicationId: currentAppInModal ? (currentAppInModal.id || currentAppInModal['Application ID']) : '',
             newStatus: newStatus,
             rejectionReason: reason,
-            updateDocType: docType
+            updateDocType: docType,
+            applicantEmail: applicantEmail,
+            applicantName: applicantName
         });
         
         if (res.success) {
-            alert('Application updated successfully.');
+            alert('Application updated successfully and email notification sent.');
             loadDashboardData();
         } else {
-            alert('Failed to update: ' + res.message);
+            alert('Failed to update: ' + (res.message || 'Unknown error.'));
         }
     } catch (e) {
-        alert('Network error.');
+        alert('Network or server error: ' + (e.message || 'Please check your connection.'));
     }
 }
 
