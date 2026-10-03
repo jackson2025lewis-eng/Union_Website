@@ -1,7 +1,7 @@
-
-  LSU MEMBERSHIP DATABASE - GOOGLE APPS SCRIPT
-  Complete Working Backend for LSUO Membership & Administrator Portal
-
+/*******************************************************
+ * LSU MEMBERSHIP DATABASE - GOOGLE APPS SCRIPT
+ * Complete Working Backend for LSUO Membership & Administrator Portal
+ *******************************************************/
 
 const CONFIG = {
   SHEET_NAME: "Members",
@@ -23,9 +23,9 @@ const ADMIN_SHEET_NAME = "Administrators";
 const ADMIN_SESSION_TTL_SECONDS = 900;
 const ADMIN_SESSION_PREFIX = "LSU_ADMIN_SESSION_";
 
-
-  HELPERS
-
+/*******************************************************
+ * HELPERS
+ *******************************************************/
 function jsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -97,6 +97,32 @@ function findEmailInRow(row, headers) {
   }
   
   return "";
+}
+
+function getMembersSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  if (!sheet) {
+    const sheets = ss.getSheets();
+    for (const s of sheets) {
+      const name = s.getName().trim().toLowerCase();
+      if (name === "members" || name === "member" || name.includes("response") || name === "sheet1") {
+        return s;
+      }
+    }
+    return sheets[0];
+  }
+  return sheet;
+}
+
+function ensureOTPSheet() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(CONFIG.OTP_SHEET_NAME);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.OTP_SHEET_NAME);
+    sheet.appendRow(["Timestamp", "Email", "OTP", "ExpiresAt", "Verified", "Attempts"]);
+  }
+  return sheet;
 }
 
 function sendSecureEmail(toEmail, subject, bodyText) {
@@ -185,9 +211,9 @@ function archiveOldDocument(oldUrl) {
   }
 }
 
-
- ADMINISTRATOR HIERARCHY
- 
+/*******************************************************
+ * ADMINISTRATOR HIERARCHY
+ *******************************************************/
 function isChiefAdministrator(email) {
   return (extractEmail(email) === extractEmail(CHIEF_ADMIN_EMAIL));
 }
@@ -417,13 +443,12 @@ function logoutAdministrator(token) {
   return { success: true };
 }
 
-
- DASHBOARD STATISTICS
-
+/*******************************************************
+ * DASHBOARD STATISTICS
+ *******************************************************/
 function getDashboardData(sessionToken) {
   const session = requireAdministratorSession(sessionToken);
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = getMembersSheet();
   if (!sheet) throw new Error("Members sheet not found.");
   
   const values = sheet.getDataRange().getValues();
@@ -529,9 +554,9 @@ function getDashboardData(sessionToken) {
   return { success: true, administrator: session, statistics: statistics, applications: applications };
 }
 
-
-APPLICATION STATUS WORKFLOW
-
+/*******************************************************
+ * APPLICATION STATUS WORKFLOW
+ *******************************************************/
 function updateApplicationStatus(payload) {
   const session = requireAdministratorSession(payload.sessionToken);
   const appId = String(payload.applicationId || "").trim();
@@ -543,8 +568,7 @@ function updateApplicationStatus(payload) {
     docType = "Identification Photo";
   }
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = getMembersSheet();
   const values = sheet.getDataRange().getValues();
   const headers = values[0].map(h => String(h || "").trim());
   
@@ -692,15 +716,14 @@ function updateApplicationStatus(payload) {
   return { success: true, message: "Status updated successfully." };
 }
 
-
-  ADMIN RESEND ACTIONS (24-HOUR EXPIRATION)
-
+/*******************************************************
+ * ADMIN RESEND ACTIONS (24-HOUR EXPIRATION)
+ *******************************************************/
 function resendUploadLink(payload) {
   const session = requireAdministratorSession(payload.sessionToken);
   const appId = String(payload.applicationId || "").trim();
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = getMembersSheet();
   const values = sheet.getDataRange().getValues();
   const headers = values[0].map(h => String(h || "").trim());
   
@@ -773,8 +796,7 @@ function resendVerificationCode(payload) {
   const session = requireAdministratorSession(payload.sessionToken);
   const appId = String(payload.applicationId || "").trim();
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = getMembersSheet();
   const values = sheet.getDataRange().getValues();
   const headers = values[0].map(h => String(h || "").trim());
   
@@ -823,9 +845,9 @@ function resendVerificationCode(payload) {
   return { success: true, message: `New verification code sent. Valid until ${formattedExpiry}.` };
 }
 
-
- DOCUMENT UPDATE PORTAL LOGIC
-
+/*******************************************************
+ * DOCUMENT UPDATE PORTAL LOGIC
+ *******************************************************/
 function getDocumentUpdateInfo(token) {
   token = String(token || "").trim();
   const dataStr = PropertiesService.getScriptProperties().getProperty('DOC_UPDATE_' + token);
@@ -847,8 +869,7 @@ function getDocumentUpdateInfo(token) {
   }
   
   // Verify application is still NEEDS_CLARIFICATION
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = getMembersSheet();
   const values = sheet.getDataRange().getValues();
   const headers = values[0];
   const idxId = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
@@ -912,8 +933,7 @@ function submitDocumentUpdate(payload) {
   const isPhoto = (docType === "Identification Photo" || docType === "Passport Photo");
   validateFileObject(payload.file, docType, isPhoto ? "IMAGE" : "PDF");
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = getMembersSheet();
   const values = sheet.getDataRange().getValues();
   const headers = values[0].map(h => String(h || "").trim());
   
@@ -995,9 +1015,9 @@ function submitDocumentUpdate(payload) {
   return { success: true, message: "Document replaced successfully." };
 }
 
-
- EMAIL REPLY VERIFICATION (SERVER-SIDE 24-HOUR EXPIRATION)
- 
+/*******************************************************
+ * EMAIL REPLY VERIFICATION (SERVER-SIDE 24-HOUR EXPIRATION)
+ *******************************************************/
 function processVerificationReplies(payload) {
   if (payload && payload.sessionToken) {
     requireAdministratorSession(payload.sessionToken);
@@ -1006,8 +1026,7 @@ function processVerificationReplies(payload) {
   const threads = GmailApp.search('is:unread subject:"Re: LSU Membership Application - Verification Required"');
   let processedCount = 0;
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = getMembersSheet();
   const values = sheet.getDataRange().getValues();
   const headers = values[0].map(h => String(h || "").trim());
   
@@ -1074,33 +1093,45 @@ function processVerificationReplies(payload) {
   return { success: true, message: `Processed ${processedCount} verifications.` };
 }
 
-
- FRONTEND USER OTP & SUBMISSION
-
+/*******************************************************
+ * FRONTEND USER OTP & SUBMISSION
+ *******************************************************/
 function sendOTP(email) {
   email = extractEmail(email);
   if (!validateEmail(email)) throw new Error("Invalid email.");
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.OTP_SHEET_NAME);
-  const otp = CONFIG.OTP_PREFIX + Math.floor(Math.random() * 10000).toString().padStart(4, "0");
+  const sheet = ensureOTPSheet();
+  const otp = CONFIG.OTP_PREFIX + Math.floor(1000 + Math.random() * 9000);
   sheet.appendRow([new Date(), email, otp, new Date(Date.now() + CONFIG.OTP_EXPIRY_MINUTES * 60000), "No", 0]);
-  sendSecureEmail(email, "LSU Email Verification", `Your verification code is: ${otp}`);
+  sendSecureEmail(
+    email,
+    "LSU Email Verification Code",
+    `Dear Applicant,\n\nYour LSU email verification code is: ${otp}\n\nThis code will expire in ${CONFIG.OTP_EXPIRY_MINUTES} minutes.\n\nRegards,\nLiberian Students Union in Odisha`
+  );
   return { success: true };
 }
 
 function verifyOTP(email, enteredOTP) {
   email = extractEmail(email);
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.OTP_SHEET_NAME);
+  enteredOTP = String(enteredOTP || "").trim().toUpperCase();
+  const sheet = ensureOTPSheet();
   const values = sheet.getDataRange().getValues();
   for (let i = values.length - 1; i >= 1; i--) {
     if (extractEmail(values[i][1]) === email) {
-      if (String(values[i][2]).toUpperCase() === String(enteredOTP).toUpperCase()) {
+      const storedOtp = String(values[i][2] || "").trim().toUpperCase();
+      const expiresAt = new Date(values[i][3]);
+      const verified = String(values[i][4] || "").trim().toUpperCase();
+      
+      if (verified === "YES") return { success: false, message: "Code has already been used." };
+      if (new Date() > expiresAt) return { success: false, message: "Verification code has expired. Please request a new code." };
+      
+      if (storedOtp === enteredOTP) {
         sheet.getRange(i + 1, 5).setValue("Yes");
         return { success: true };
       }
-      return { success: false, message: "Invalid code." };
+      return { success: false, message: "Invalid verification code." };
     }
   }
-  return { success: false, message: "Code not found." };
+  return { success: false, message: "Code not found or expired. Please request a new code." };
 }
 
 function submitApplication(payload) {
@@ -1136,8 +1167,7 @@ function submitApplication(payload) {
     throw new Error("Total document upload size exceeds the maximum limit of 15 MB.");
   }
   
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const sheet = getMembersSheet();
   
   const uniqueId = "APP-" + new Date().getFullYear() + "-" + Utilities.getUuid().split("-")[0].toUpperCase();
   const root = DriveApp.getFolderById(CONFIG.ROOT_DRIVE_FOLDER_ID);
@@ -1219,9 +1249,9 @@ function submitApplication(payload) {
   return { success: true, applicationId: uniqueId };
 }
 
-
- MAIN WEB APP ENDPOINT
-
+/*******************************************************
+ * MAIN WEB APP ENDPOINT
+ *******************************************************/
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
