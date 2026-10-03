@@ -157,7 +157,6 @@ async function sendBackendRequest(payload) {
     try {
         const response = await fetch(SCRIPT_URL, {
             method: 'POST',
-            mode: 'cors',
             headers: {
                 'Content-Type': 'text/plain;charset=utf-8',
             },
@@ -166,12 +165,14 @@ async function sendBackendRequest(payload) {
         const result = await response.json();
         return result;
     } catch (error) {
-        throw new Error('Network error or server is down.');
+        console.error("Backend request error:", error);
+        throw error;
     }
 }
 
 async function handleCheckAccess() {
-    const email = document.getElementById('admin-email').value.trim();
+    const emailInput = document.getElementById('admin-email');
+    const email = emailInput ? emailInput.value.trim() : '';
     const errorEl = document.getElementById('login-error');
     if (!email) {
         errorEl.textContent = 'Please enter an email address.';
@@ -185,20 +186,24 @@ async function handleCheckAccess() {
     try {
         const res = await sendBackendRequest({ action: 'checkAdministratorAccess', email });
         
-        if (res.success) {
-            // Authorized, now send OTP
-            await sendBackendRequest({ action: 'sendAdministratorOTP', email });
+        if (res.success && res.authorized) {
+            const otpRes = await sendBackendRequest({ action: 'sendAdministratorOTP', email });
             loginLoading.style.display = 'none';
-            otpStep.style.display = 'block';
+            if (otpRes.success) {
+                otpStep.style.display = 'block';
+            } else {
+                emailStep.style.display = 'block';
+                errorEl.textContent = otpRes.message || 'Failed to send verification code.';
+            }
         } else {
             loginLoading.style.display = 'none';
             emailStep.style.display = 'block';
-            errorEl.textContent = 'You are not authorized to access the Administrator Portal.';
+            errorEl.textContent = res.message || 'You are not authorized to access the Administrator Portal.';
         }
     } catch (err) {
         loginLoading.style.display = 'none';
         emailStep.style.display = 'block';
-        errorEl.textContent = 'An error occurred connecting to the server.';
+        errorEl.textContent = err.message || 'An error occurred connecting to the server. Please check your internet connection.';
     }
 }
 
