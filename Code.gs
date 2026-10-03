@@ -1,7 +1,7 @@
-/*******************************************************
- * LSU MEMBERSHIP DATABASE - GOOGLE APPS SCRIPT
- * Complete Working Backend for LSUO Membership & Administrator Portal
- *******************************************************/
+
+  LSU MEMBERSHIP DATABASE - GOOGLE APPS SCRIPT
+  Complete Working Backend for LSUO Membership & Administrator Portal
+
 
 const CONFIG = {
   SHEET_NAME: "Members",
@@ -11,7 +11,10 @@ const CONFIG = {
   OTP_LENGTH: 4,
   OTP_EXPIRY_MINUTES: 5,
   MAX_ATTEMPTS: 3,
-  VERIFICATION_HOURS: 48,
+  VERIFICATION_HOURS: 24, // Verification codes expire after 24 hours
+  DOC_UPDATE_EXPIRY_HOURS: 24, // Document update links expire after 24 hours
+  MAX_SINGLE_FILE_BYTES: 5 * 1024 * 1024, // 5 MB per file
+  MAX_TOTAL_UPLOAD_BYTES: 15 * 1024 * 1024, // 15 MB total set
   FRONTEND_UPDATE_URL: "https://lsu-odisha.vercel.app/update-portal/index.html"
 };
 
@@ -20,9 +23,9 @@ const ADMIN_SHEET_NAME = "Administrators";
 const ADMIN_SESSION_TTL_SECONDS = 900;
 const ADMIN_SESSION_PREFIX = "LSU_ADMIN_SESSION_";
 
-/*******************************************************
- * HELPERS
- *******************************************************/
+
+  HELPERS
+
 function jsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }
@@ -36,6 +39,11 @@ function extractEmail(str) {
 
 function validateEmail(email) {
   return extractEmail(email).length > 0;
+}
+
+function formatExactDateTime(dateObj) {
+  if (!dateObj || !(dateObj instanceof Date)) return "";
+  return Utilities.formatDate(dateObj, Session.getScriptTimeZone() || "GMT+05:30", "MMMM dd, yyyy 'at' hh:mm a z");
 }
 
 function findColumnIndex(headers, ...possibleNames) {
@@ -119,6 +127,36 @@ function getOrCreateFolder(parentFolder, folderName) {
   return parentFolder.createFolder(folderName);
 }
 
+function validateFileObject(fileObject, fieldLabel, expectedType) {
+  if (!fileObject || !fileObject.content || !fileObject.name) {
+    throw new Error(`Invalid file upload for ${fieldLabel}.`);
+  }
+  
+  const decoded = Utilities.base64Decode(fileObject.content);
+  const sizeBytes = decoded.length;
+  
+  if (sizeBytes > CONFIG.MAX_SINGLE_FILE_BYTES) {
+    throw new Error(`${fieldLabel} exceeds maximum allowed size of 5 MB.`);
+  }
+  
+  const mime = String(fileObject.type || "").toLowerCase();
+  const name = String(fileObject.name || "").toLowerCase();
+  
+  if (expectedType === "IMAGE") {
+    const isJpg = mime.includes("image/jpeg") || mime.includes("image/jpg") || name.endsWith(".jpg") || name.endsWith(".jpeg");
+    if (!isJpg) {
+      throw new Error(`${fieldLabel} must be in JPG/JPEG format.`);
+    }
+  } else if (expectedType === "PDF") {
+    const isPdf = mime.includes("application/pdf") || name.endsWith(".pdf");
+    if (!isPdf) {
+      throw new Error(`${fieldLabel} must be a PDF document.`);
+    }
+  }
+  
+  return { decoded, sizeBytes };
+}
+
 function saveFileToDrive(fileObject, applicationFolder) {
   if (!fileObject || !fileObject.content || !fileObject.name || !fileObject.type) {
     throw new Error("Invalid file data received.");
@@ -147,9 +185,9 @@ function archiveOldDocument(oldUrl) {
   }
 }
 
-/*******************************************************
- * ADMINISTRATOR HIERARCHY
- *******************************************************/
+
+ ADMINISTRATOR HIERARCHY
+ 
 function isChiefAdministrator(email) {
   return (extractEmail(email) === extractEmail(CHIEF_ADMIN_EMAIL));
 }
@@ -379,9 +417,9 @@ function logoutAdministrator(token) {
   return { success: true };
 }
 
-/*******************************************************
- * DASHBOARD STATISTICS
- *******************************************************/
+
+ DASHBOARD STATISTICS
+
 function getDashboardData(sessionToken) {
   const session = requireAdministratorSession(sessionToken);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -404,6 +442,7 @@ function getDashboardData(sessionToken) {
     const idxDegree = findColumnIndex(headers, "Degree Type", "Degree", "Course");
     const idxUni = findColumnIndex(headers, "University", "College", "Institution");
     const idxAppId = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
+    const idxPhoto = findColumnIndex(headers, "Identification Photo", "Passport Photo");
 
     for (let i = 1; i < values.length; i++) {
       const row = values[i];
@@ -478,6 +517,11 @@ function getDashboardData(sessionToken) {
       app['Applicant Email'] = extractedEmail;
       app['Application ID'] = appId || (idxAppId !== -1 ? row[idxAppId] : '') || ('ROW-' + (i + 1));
       
+      // Keep both Identification Photo and Passport Photo properties synced
+      const photoUrl = (idxPhoto !== -1 && row[idxPhoto]) ? row[idxPhoto] : (app['Identification Photo'] || app['Passport Photo'] || '');
+      app['Identification Photo'] = photoUrl;
+      app['Passport Photo'] = photoUrl;
+      
       applications.push(app);
     }
   }
@@ -485,15 +529,19 @@ function getDashboardData(sessionToken) {
   return { success: true, administrator: session, statistics: statistics, applications: applications };
 }
 
-/*******************************************************
- * APPLICATION STATUS WORKFLOW
- *******************************************************/
+
+APPLICATION STATUS WORKFLOW
+
 function updateApplicationStatus(payload) {
   const session = requireAdministratorSession(payload.sessionToken);
   const appId = String(payload.applicationId || "").trim();
   const newStatus = String(payload.newStatus || "").trim().toUpperCase();
   const reason = String(payload.rejectionReason || "").trim();
-  const docType = String(payload.updateDocType || "").trim();
+  let docType = String(payload.updateDocType || "").trim();
+  
+  if (docType === "Passport Photo") {
+    docType = "Identification Photo";
+  }
   
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
@@ -579,10 +627,18 @@ function updateApplicationStatus(payload) {
     if (!reason || !docType) throw new Error("Document type and reason required for updates.");
     if (colReason !== -1) sheet.getRange(targetRow, colReason + 1).setValue(`Update requested for: ${docType}. Reason: ${reason}`);
     
-    // Generate secure token and store in Script Properties
+    // Generate secure token with server-side 24-hour expiration
     const token = Utilities.getUuid();
+    const expiryTime = new Date(Date.now() + CONFIG.DOC_UPDATE_EXPIRY_HOURS * 60 * 60 * 1000);
+    const formattedExpiry = formatExactDateTime(expiryTime);
+    
     PropertiesService.getScriptProperties().setProperty('DOC_UPDATE_' + token, JSON.stringify({
-      appId: appId, email: applicantEmail, docType: docType, reason: reason
+      appId: appId,
+      email: applicantEmail,
+      docType: docType,
+      reason: reason,
+      createdAt: new Date().toISOString(),
+      expiresAt: expiryTime.toISOString()
     }));
     
     const updateLink = `${CONFIG.FRONTEND_UPDATE_URL}?token=${token}`;
@@ -590,8 +646,8 @@ function updateApplicationStatus(payload) {
     if (applicantEmail) {
       sendSecureEmail(
         applicantEmail,
-        "LSU Membership Application - Document Update Required",
-        `Dear ${applicantName},\n\nYour LSU membership application (${appId}) has been reviewed.\n\nWe need you to update the following document before your application can be processed:\n\nDocument Required: ${docType}\nReason / Instructions: ${reason}\n\nPlease click the secure link below to upload your replacement document:\n${updateLink}\n\nYour application will remain under review until the requested document is received. Please constantly check your email for further information regarding your membership status and progress.\n\nRegards,\nLiberian Students Union in Odisha`
+        "LSU Membership Application - Document Update Required (24-Hour Expiry)",
+        `Dear ${applicantName},\n\nYour LSU membership application (${appId}) has been reviewed.\n\nWe need you to update the following document before your application can be processed:\n\nDocument Required: ${docType}\nReason / Instructions: ${reason}\n\nPlease click the secure link below to upload your replacement document:\n${updateLink}\n\nIMPORTANT: This link will expire in 24 hours on ${formattedExpiry}.\n\nYour application will remain under review until the requested document is received. Please check your email regularly for further updates.\n\nRegards,\nLiberian Students Union in Odisha`
       );
     } else {
       throw new Error("Unable to locate a valid email address for application " + appId + ". Please check the spreadsheet row.");
@@ -599,14 +655,18 @@ function updateApplicationStatus(payload) {
   }
   else if (newStatus === "VERIFICATION_PENDING") {
     const code = "LSU26-" + Math.floor(100000 + Math.random() * 900000);
+    const sentTime = new Date();
+    const expiryTime = new Date(sentTime.getTime() + CONFIG.VERIFICATION_HOURS * 60 * 60 * 1000);
+    const formattedExpiry = formatExactDateTime(expiryTime);
+    
     if (colVCode !== -1) sheet.getRange(targetRow, colVCode + 1).setValue(code);
-    if (colVSent !== -1) sheet.getRange(targetRow, colVSent + 1).setValue(new Date());
+    if (colVSent !== -1) sheet.getRange(targetRow, colVSent + 1).setValue(sentTime);
     
     if (applicantEmail) {
       sendSecureEmail(
         applicantEmail,
-        "LSU Membership Application - Verification Required",
-        `Dear ${applicantName},\n\nYour LSU membership application (${appId}) has been pre-approved!\n\nTo complete your membership registration, please reply directly to this email with the following verification code within 48 hours:\n\n${code}\n\nOnce received, your official LSU Membership ID will be issued.\n\nRegards,\nLiberian Students Union in Odisha`
+        "LSU Membership Application - Verification Required (24-Hour Expiry)",
+        `Dear ${applicantName},\n\nYour LSU membership application (${appId}) has been pre-approved!\n\nTo complete your membership registration, please reply directly to this email with the following verification code within 24 hours:\n\n${code}\n\nIMPORTANT: This verification code will expire on ${formattedExpiry} (in 24 hours).\n\nOnce received, your official LSU Membership ID will be issued.\n\nRegards,\nLiberian Students Union in Odisha`
       );
     } else {
       throw new Error("Unable to locate a valid email address for application " + appId + ". Please check the spreadsheet row.");
@@ -632,14 +692,159 @@ function updateApplicationStatus(payload) {
   return { success: true, message: "Status updated successfully." };
 }
 
-/*******************************************************
- * DOCUMENT UPDATE PORTAL LOGIC
- *******************************************************/
+
+  ADMIN RESEND ACTIONS (24-HOUR EXPIRATION)
+
+function resendUploadLink(payload) {
+  const session = requireAdministratorSession(payload.sessionToken);
+  const appId = String(payload.applicationId || "").trim();
+  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(h => String(h || "").trim());
+  
+  const colAppId = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
+  const colFirstName = findColumnIndex(headers, "First Name", "FirstName", "Applicant Name", "Name");
+  const colLastName = findColumnIndex(headers, "Last Name", "LastName");
+  const colReason = findColumnIndex(headers, "Rejection Reason", "Reason", "Rejection reason", "Remarks");
+  
+  let targetRow = -1;
+  let targetRowData = null;
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (colAppId !== -1 && String(row[colAppId] || "").trim().toUpperCase() === appId.toUpperCase()) {
+      targetRow = i + 1;
+      targetRowData = row;
+      break;
+    }
+  }
+  
+  if (targetRow === -1) throw new Error("Application '" + appId + "' not found.");
+  
+  const applicantEmail = findEmailInRow(targetRowData, headers);
+  if (!applicantEmail) throw new Error("Applicant email not found.");
+  
+  const fn = colFirstName !== -1 ? String(targetRowData[colFirstName] || "").trim() : "";
+  const ln = colLastName !== -1 ? String(targetRowData[colLastName] || "").trim() : "";
+  const applicantName = (fn + " " + ln).trim() || "Applicant";
+  
+  let docType = String(payload.updateDocType || "").trim();
+  let reason = String(payload.rejectionReason || "").trim();
+  
+  if (!docType && colReason !== -1) {
+    const existingReason = String(targetRowData[colReason] || "");
+    const match = existingReason.match(/Update requested for:\s*([^.]+)\.\s*Reason:\s*(.*)/i);
+    if (match) {
+      docType = match[1].trim();
+      if (!reason) reason = match[2].trim();
+    }
+  }
+  if (!docType) docType = "Identification Photo";
+  if (!reason) reason = "Please upload an updated document.";
+  
+  if (docType === "Passport Photo") docType = "Identification Photo";
+  
+  const token = Utilities.getUuid();
+  const expiryTime = new Date(Date.now() + CONFIG.DOC_UPDATE_EXPIRY_HOURS * 60 * 60 * 1000);
+  const formattedExpiry = formatExactDateTime(expiryTime);
+  
+  PropertiesService.getScriptProperties().setProperty('DOC_UPDATE_' + token, JSON.stringify({
+    appId: appId,
+    email: applicantEmail,
+    docType: docType,
+    reason: reason,
+    createdAt: new Date().toISOString(),
+    expiresAt: expiryTime.toISOString()
+  }));
+  
+  const updateLink = `${CONFIG.FRONTEND_UPDATE_URL}?token=${token}`;
+  
+  sendSecureEmail(
+    applicantEmail,
+    "LSU Membership Application - New Document Update Link (24-Hour Expiry)",
+    `Dear ${applicantName},\n\nA new secure document update link has been generated for your LSU membership application (${appId}).\n\nDocument Required: ${docType}\nReason / Instructions: ${reason}\n\nPlease click the link below to upload your document:\n${updateLink}\n\nIMPORTANT: This new link is valid for 24 hours and will expire on ${formattedExpiry}.\n\nRegards,\nLiberian Students Union in Odisha`
+  );
+  
+  return { success: true, message: `New upload link generated and sent. Valid until ${formattedExpiry}.` };
+}
+
+function resendVerificationCode(payload) {
+  const session = requireAdministratorSession(payload.sessionToken);
+  const appId = String(payload.applicationId || "").trim();
+  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
+  const values = sheet.getDataRange().getValues();
+  const headers = values[0].map(h => String(h || "").trim());
+  
+  const colAppId = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
+  const colFirstName = findColumnIndex(headers, "First Name", "FirstName", "Applicant Name", "Name");
+  const colLastName = findColumnIndex(headers, "Last Name", "LastName");
+  const colStatus = findColumnIndex(headers, "Application Status", "Status");
+  const colVCode = findColumnIndex(headers, "Verification Code", "Verification code", "OTP");
+  const colVSent = findColumnIndex(headers, "Verification Sent Date", "Verification Sent");
+  
+  let targetRow = -1;
+  let targetRowData = null;
+  for (let i = 1; i < values.length; i++) {
+    const row = values[i];
+    if (colAppId !== -1 && String(row[colAppId] || "").trim().toUpperCase() === appId.toUpperCase()) {
+      targetRow = i + 1;
+      targetRowData = row;
+      break;
+    }
+  }
+  
+  if (targetRow === -1) throw new Error("Application '" + appId + "' not found.");
+  
+  const applicantEmail = findEmailInRow(targetRowData, headers);
+  if (!applicantEmail) throw new Error("Applicant email not found.");
+  
+  const fn = colFirstName !== -1 ? String(targetRowData[colFirstName] || "").trim() : "";
+  const ln = colLastName !== -1 ? String(targetRowData[colLastName] || "").trim() : "";
+  const applicantName = (fn + " " + ln).trim() || "Applicant";
+  
+  const newCode = "LSU26-" + Math.floor(100000 + Math.random() * 900000);
+  const sentTime = new Date();
+  const expiryTime = new Date(sentTime.getTime() + CONFIG.VERIFICATION_HOURS * 60 * 60 * 1000);
+  const formattedExpiry = formatExactDateTime(expiryTime);
+  
+  if (colStatus !== -1) sheet.getRange(targetRow, colStatus + 1).setValue("VERIFICATION_PENDING");
+  if (colVCode !== -1) sheet.getRange(targetRow, colVCode + 1).setValue(newCode);
+  if (colVSent !== -1) sheet.getRange(targetRow, colVSent + 1).setValue(sentTime);
+  
+  sendSecureEmail(
+    applicantEmail,
+    "LSU Membership Application - New Verification Code (24-Hour Expiry)",
+    `Dear ${applicantName},\n\nA new verification code has been issued for your LSU membership application (${appId}).\n\nVerification Code:\n${newCode}\n\nIMPORTANT: This code is valid for 24 hours and will expire on ${formattedExpiry}.\n\nPlease reply directly to this email with the verification code above to complete your membership confirmation.\n\nRegards,\nLiberian Students Union in Odisha`
+  );
+  
+  return { success: true, message: `New verification code sent. Valid until ${formattedExpiry}.` };
+}
+
+
+ DOCUMENT UPDATE PORTAL LOGIC
+
 function getDocumentUpdateInfo(token) {
   token = String(token || "").trim();
   const dataStr = PropertiesService.getScriptProperties().getProperty('DOC_UPDATE_' + token);
-  if (!dataStr) throw new Error("This document update link is invalid or has expired. Please contact the LSU.");
+  if (!dataStr) throw new Error("This document update link is invalid or has expired. Please contact the LSU administrator.");
+  
   const data = JSON.parse(dataStr);
+  
+  // Server-side 24-hour expiration check
+  if (data.expiresAt) {
+    const expiryDate = new Date(data.expiresAt);
+    if (new Date() > expiryDate) {
+      throw new Error(`This document update link expired on ${formatExactDateTime(expiryDate)}. Please request a new link from the administrator.`);
+    }
+  }
+  
+  // Normalize docType name
+  if (data.docType === "Passport Photo") {
+    data.docType = "Identification Photo";
+  }
   
   // Verify application is still NEEDS_CLARIFICATION
   const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -673,24 +878,39 @@ function getDocumentUpdateInfo(token) {
     throw new Error("This application is no longer awaiting a document update.");
   }
   
-  return { success: true, appId: data.appId, docType: data.docType, reason: data.reason };
+  return {
+    success: true,
+    appId: data.appId,
+    docType: data.docType,
+    reason: data.reason,
+    expiresAt: data.expiresAt ? formatExactDateTime(new Date(data.expiresAt)) : ""
+  };
 }
 
 function submitDocumentUpdate(payload) {
   const token = String(payload.token || "").trim();
   const dataStr = PropertiesService.getScriptProperties().getProperty('DOC_UPDATE_' + token);
   if (!dataStr) throw new Error("Invalid or expired update token.");
+  
   const data = JSON.parse(dataStr);
+  
+  // Server-side 24-hour expiration check
+  if (data.expiresAt) {
+    const expiryDate = new Date(data.expiresAt);
+    if (new Date() > expiryDate) {
+      throw new Error(`This document update link expired on ${formatExactDateTime(expiryDate)}. Please contact the administrator.`);
+    }
+  }
   
   if (!payload.file || !payload.file.content) throw new Error("No file provided.");
   
-  // Validate file type
-  const fileType = String(payload.file.type).toLowerCase();
-  if (data.docType === "Passport Photo") {
-    if (!fileType.includes("image/jpeg") && !fileType.includes("image/jpg")) throw new Error("Passport Photo must be JPG/JPEG.");
-  } else {
-    if (!fileType.includes("application/pdf")) throw new Error("Document must be a PDF.");
-  }
+  // Normalize docType
+  let docType = data.docType;
+  if (docType === "Passport Photo") docType = "Identification Photo";
+  
+  // Validate file size and type (5 MB max)
+  const isPhoto = (docType === "Identification Photo" || docType === "Passport Photo");
+  validateFileObject(payload.file, docType, isPhoto ? "IMAGE" : "PDF");
   
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
@@ -699,9 +919,9 @@ function submitDocumentUpdate(payload) {
   
   const idxAppId = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
   const idxStatus = findColumnIndex(headers, "Application Status", "Status");
-  const idxDoc = findColumnIndex(headers, data.docType);
+  const idxDoc = findColumnIndex(headers, docType, isPhoto ? "Passport Photo" : docType);
   
-  if (idxDoc === -1) throw new Error("Document column '" + data.docType + "' not found in database.");
+  if (idxDoc === -1) throw new Error("Document column '" + docType + "' not found in database.");
   
   let targetRow = -1;
   let targetRowData = null;
@@ -759,7 +979,7 @@ function submitDocumentUpdate(payload) {
     sheet.getRange(targetRow, idxStatus + 1).setValue("UNDER_REVIEW");
   }
   
-  // Cleanup Token
+  // Invalidate token immediately upon successful use
   PropertiesService.getScriptProperties().deleteProperty('DOC_UPDATE_' + token);
   
   // Notify Applicant
@@ -768,16 +988,16 @@ function submitDocumentUpdate(payload) {
     sendSecureEmail(
       applicantEmail,
       "LSU Membership - Document Received",
-      `Dear Applicant,\n\nYour updated document (${data.docType}) has been successfully received.\nYour application (${data.appId}) has been returned to the administrator for review.\n\nPlease constantly check your email for further information regarding your membership status and progress.\n\nRegards,\nLiberian Students Union in Odisha`
+      `Dear Applicant,\n\nYour updated document (${docType}) has been successfully received.\nYour application (${data.appId}) has been returned to the administrator for review.\n\nPlease constantly check your email for further information regarding your membership status and progress.\n\nRegards,\nLiberian Students Union in Odisha`
     );
   }
   
   return { success: true, message: "Document replaced successfully." };
 }
 
-/*******************************************************
- * EMAIL REPLY VERIFICATION
- *******************************************************/
+
+ EMAIL REPLY VERIFICATION (SERVER-SIDE 24-HOUR EXPIRATION)
+ 
 function processVerificationReplies(payload) {
   if (payload && payload.sessionToken) {
     requireAdministratorSession(payload.sessionToken);
@@ -818,10 +1038,12 @@ function processVerificationReplies(payload) {
           const sentDate = idxVSent !== -1 ? new Date(values[i][idxVSent]) : new Date();
           const now = new Date();
           
-          const hoursDiff = (now - sentDate) / (1000 * 60 * 60);
+          const hoursDiff = (now.getTime() - sentDate.getTime()) / (1000 * 60 * 60);
+          
+          // Server-side 24-hour expiration check
           if (hoursDiff > CONFIG.VERIFICATION_HOURS) {
             if (idxStatus !== -1) sheet.getRange(i + 1, idxStatus + 1).setValue("REJECTED");
-            if (idxReason !== -1) sheet.getRange(i + 1, idxReason + 1).setValue("Verification code expired (48 hours).");
+            if (idxReason !== -1) sheet.getRange(i + 1, idxReason + 1).setValue("Verification code expired (24 hours).");
             msg.markRead();
             continue;
           }
@@ -852,9 +1074,9 @@ function processVerificationReplies(payload) {
   return { success: true, message: `Processed ${processedCount} verifications.` };
 }
 
-/*******************************************************
- * FRONTEND USER OTP & SUBMISSION
- *******************************************************/
+
+ FRONTEND USER OTP & SUBMISSION
+
 function sendOTP(email) {
   email = extractEmail(email);
   if (!validateEmail(email)) throw new Error("Invalid email.");
@@ -882,8 +1104,37 @@ function verifyOTP(email, enteredOTP) {
 }
 
 function submitApplication(payload) {
-  const data = payload.data;
+  const data = payload.data || {};
   const isStudent = String(data["Membership Type"] || "").toUpperCase().includes("STUDENT");
+  
+  // Validate documents on server-side
+  let totalBytes = 0;
+  
+  // 1. Identification Photo (JPG/JPEG, max 5 MB)
+  const idPhotoObj = payload.identificationPhoto || payload.passportPhoto;
+  if (!idPhotoObj) throw new Error("Identification Photo is required.");
+  const idPhotoValid = validateFileObject(idPhotoObj, "Identification Photo", "IMAGE");
+  totalBytes += idPhotoValid.sizeBytes;
+  
+  // 2. Passport Document (PDF, max 5 MB)
+  const passDocObj = payload.passportDocument || payload.passportFile;
+  if (!passDocObj) throw new Error("Passport Document is required.");
+  const passDocValid = validateFileObject(passDocObj, "Passport Document", "PDF");
+  totalBytes += passDocValid.sizeBytes;
+  
+  // 3. EFRO File (PDF, max 5 MB, required for current students)
+  let efroDocValid = null;
+  const efroDocObj = payload.efroFile || payload.efro;
+  if (isStudent) {
+    if (!efroDocObj) throw new Error("EFRO Document is required for Current Students.");
+    efroDocValid = validateFileObject(efroDocObj, "EFRO File", "PDF");
+    totalBytes += efroDocValid.sizeBytes;
+  }
+  
+  // 4. Validate total upload set <= 15 MB
+  if (totalBytes > CONFIG.MAX_TOTAL_UPLOAD_BYTES) {
+    throw new Error("Total document upload size exceeds the maximum limit of 15 MB.");
+  }
   
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.SHEET_NAME);
@@ -894,49 +1145,51 @@ function submitApplication(payload) {
   const catF = getOrCreateFolder(yearF, isStudent ? "Current Students" : "Alumni");
   const appF = getOrCreateFolder(catF, uniqueId);
   
-  const efroUrl = isStudent && payload.efroFile ? saveFileToDrive(payload.efroFile, appF) : "";
-  const passDocUrl = saveFileToDrive(payload.passportFile, appF);
-  const passPhotoUrl = saveFileToDrive(payload.passportPhoto, appF);
+  const efroUrl = isStudent && efroDocObj ? saveFileToDrive(efroDocObj, appF) : "";
+  const passDocUrl = saveFileToDrive(passDocObj, appF);
+  const idPhotoUrl = saveFileToDrive(idPhotoObj, appF);
   
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const row = new Array(headers.length).fill("");
   
-  const setVal = (headerName, value) => {
-    let idx = headers.findIndex(h => String(h).trim().toLowerCase() === headerName.toLowerCase());
+  const setVal = (headerNames, value) => {
+    const names = Array.isArray(headerNames) ? headerNames : [headerNames];
+    const idx = findColumnIndex(headers, ...names);
     if (idx !== -1) {
       row[idx] = value;
     }
   };
 
-  setVal("Membership Type", data["Membership Type"] || (isStudent ? "CURRENT STUDENT" : "ALUMNI"));
-  setVal("First Name", data["First Name"] || "");
-  setVal("Middle Name", data["Middle Name"] || "");
-  setVal("Last Name", data["Last Name"] || "");
-  setVal("Gender", data["Gender"] || "");
-  setVal("Position / Role", data["Position / Role"] || "");
-  setVal("WhatsApp Number", data["WhatsApp Number"] || "");
-  setVal("Date of Birth", data["Date of Birth"] || "");
-  setVal("Mobile Number", data["Mobile Number"] || "");
-  setVal("Passport Number", data["Passport Number"] || "");
-  setVal("College Registration Number", data["College Registration Number"] || "");
-  setVal("University", data["University"] || "");
-  setVal("Degree Type", data["Degree Type"] || "");
-  setVal("Study From", data["Study From"] || "");
-  setVal("Study To", data["Study To"] || "");
-  setVal("Field of Studies", data["Field of Studies"] || "");
-  setVal("Mother Name", data["Mother Name"] || "");
-  setVal("Father Name", data["Father Name"] || "");
-  setVal("Parents Contact", data["Parents Contact"] || "");
-  setVal("Graduation Date", data["Graduation Date"] || "");
+  setVal(["Membership Type", "Type"], data["Membership Type"] || (isStudent ? "CURRENT STUDENT" : "ALUMNI"));
+  setVal(["First Name", "FirstName"], data["First Name"] || "");
+  setVal(["Middle Name", "MiddleName"], data["Middle Name"] || "");
+  setVal(["Last Name", "LastName"], data["Last Name"] || "");
+  setVal(["Gender", "Sex"], data["Gender"] || "");
+  setVal(["Position / Role", "Role", "Position"], data["Position / Role"] || "");
+  setVal(["WhatsApp Number", "WhatsApp"], data["WhatsApp Number"] || "");
+  setVal(["Date of Birth", "DOB"], data["Date of Birth"] || "");
+  setVal(["Mobile Number", "Mobile"], data["Mobile Number"] || "");
+  setVal(["Passport Number", "Passport No"], data["Passport Number"] || "");
+  setVal(["College Registration Number", "Registration Number"], data["College Registration Number"] || "");
+  setVal(["University", "College"], data["University"] || "");
+  setVal(["Degree Type", "Degree"], data["Degree Type"] || "");
+  setVal(["Study From", "From"], data["Study From"] || "");
+  setVal(["Study To", "To"], data["Study To"] || "");
+  setVal(["Field of Studies", "Field of Study"], data["Field of Studies"] || "");
+  setVal(["Mother Name", "Mother's Name"], data["Mother Name"] || "");
+  setVal(["Father Name", "Father's Name"], data["Father Name"] || "");
+  setVal(["Parents Contact", "Parent Contact"], data["Parents Contact"] || "");
+  setVal(["Graduation Date"], data["Graduation Date"] || "");
   
-  setVal("EFRO File", efroUrl);
-  setVal("Passport Document", passDocUrl);
-  setVal("Passport Photo", passPhotoUrl);
-  setVal("Privacy Consent", data["Privacy Consent"] || "");
+  setVal(["EFRO File", "EFRO"], efroUrl);
+  setVal(["Passport Document", "Passport File"], passDocUrl);
+  // Keeps exact same column position whether named Identification Photo or Passport Photo
+  setVal(["Identification Photo", "Passport Photo"], idPhotoUrl);
+  setVal(["Privacy Consent", "Consent"], data["Privacy Consent"] || "");
   
-  setVal("Application ID", uniqueId);
-  setVal("Application Status", "UNDER_REVIEW");
-  setVal("Submission Date", new Date());
+  setVal(["Application ID", "App ID", "ID"], uniqueId);
+  setVal(["Application Status", "Status"], "UNDER_REVIEW");
+  setVal(["Submission Date", "Submitted Date"], new Date());
   
   // Set email in any matching column ("Email", "Applicant Email", "Untitled Question")
   headers.forEach((h, i) => {
@@ -966,9 +1219,9 @@ function submitApplication(payload) {
   return { success: true, applicationId: uniqueId };
 }
 
-/*******************************************************
- * MAIN WEB APP ENDPOINT
- *******************************************************/
+
+ MAIN WEB APP ENDPOINT
+
 function doPost(e) {
   try {
     const payload = JSON.parse(e.postData.contents);
@@ -986,6 +1239,8 @@ function doPost(e) {
     // Administrator Dashboard Actions
     if (action === "getDashboardData") return jsonResponse(getDashboardData(payload.sessionToken));
     if (action === "updateApplicationStatus") return jsonResponse(updateApplicationStatus(payload));
+    if (action === "resendUploadLink" || action === "resendDocumentUpdateLink") return jsonResponse(resendUploadLink(payload));
+    if (action === "resendVerificationCode") return jsonResponse(resendVerificationCode(payload));
     if (action === "getAdministrators") return jsonResponse(getAdministrators(payload.sessionToken));
     if (action === "addAdministrator") return jsonResponse(addAdministrator(payload.sessionToken, payload.newEmail, payload.newName));
     if (action === "deactivateAdministrator") return jsonResponse(deactivateAdministrator(payload.sessionToken, payload.targetEmail));

@@ -370,9 +370,11 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
+                const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+
                 if (input.name === 'efro' && input.files.length > 0) {
                     const file = input.files[0];
-                    if (file.type !== 'application/pdf') {
+                    if (file.type !== 'application/pdf' || file.size > MAX_FILE_SIZE) {
                         isValid = false;
                         input.closest('.form-group').classList.add('has-error');
                     }
@@ -380,7 +382,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 if (input.name === 'passportPhoto' && input.files.length > 0) {
                     const file = input.files[0];
-                    if (file.type !== 'image/jpeg' && file.type !== 'image/jpg') {
+                    const isJpg = file.type === 'image/jpeg' || file.type === 'image/jpg' || file.name.toLowerCase().endsWith('.jpg') || file.name.toLowerCase().endsWith('.jpeg');
+                    if (!isJpg || file.size > MAX_FILE_SIZE) {
                         isValid = false;
                         input.closest('.form-group').classList.add('has-error');
                     }
@@ -388,8 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (input.name === 'passportFile' && input.files.length > 0) {
                     const file = input.files[0];
-                    const maxSize = 10 * 1024 * 1024; // 10 MB
-                    if (file.type !== 'application/pdf' || file.size > maxSize) {
+                    if (file.type !== 'application/pdf' || file.size > MAX_FILE_SIZE) {
                         isValid = false;
                         input.closest('.form-group').classList.add('has-error');
                     }
@@ -527,10 +529,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         "Parents Contact": formData.parentsContact || '',
                         "Graduation Date": formData.graduationDate || '',
                         "Privacy Consent": formData.privacyConsent ? 'Yes' : 'No',
-                        "Email": formData.email // Added verified email implicitly if needed
+                        "Email": formData.email
                     },
                     efroFile: efroFileObj,
+                    identificationPhoto: passportPhotoObj,
                     passportPhoto: passportPhotoObj,
+                    passportDocument: passportFileObj,
                     passportFile: passportFileObj
                 };
 

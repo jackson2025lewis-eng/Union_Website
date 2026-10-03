@@ -1,4 +1,4 @@
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycby-5lgnRpg0hSmcdq_GTGNv43cHzKsCWZJLSeU10ofbFyccg1868xgj6B37KfS_plv7/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec';
 let updateToken = null;
 let expectedDocType = null;
 
@@ -50,12 +50,13 @@ document.addEventListener('DOMContentLoaded', async () => {
         expectedDocType = res.docType;
         
         // Update file hint based on type
-        if (expectedDocType === 'Passport Photo') {
+        const isPhoto = (expectedDocType === 'Identification Photo' || expectedDocType === 'Passport Photo');
+        if (isPhoto) {
             document.getElementById('file-hint').textContent = 'JPG/JPEG only, max 5MB.';
-            document.getElementById('replacement-file').accept = 'image/jpeg, image/jpg';
+            document.getElementById('replacement-file').accept = 'image/jpeg, image/jpg, .jpg, .jpeg';
         } else {
             document.getElementById('file-hint').textContent = 'PDF only, max 5MB.';
-            document.getElementById('replacement-file').accept = 'application/pdf';
+            document.getElementById('replacement-file').accept = 'application/pdf, .pdf';
         }
         
         showView('form');
@@ -84,10 +85,14 @@ document.getElementById('update-form').addEventListener('submit', async (e) => {
         return;
     }
     
-    if (expectedDocType === 'Passport Photo' && !file.type.includes('image/jpeg')) {
-        errorEl.textContent = "Passport Photo must be a JPG/JPEG image.";
+    const isPhoto = (expectedDocType === 'Identification Photo' || expectedDocType === 'Passport Photo');
+    const isJpg = file.type.includes('image/jpeg') || file.type.includes('image/jpg') || file.name.toLowerCase().endsWith('.jpg') || file.name.toLowerCase().endsWith('.jpeg');
+    const isPdf = file.type.includes('application/pdf') || file.name.toLowerCase().endsWith('.pdf');
+    
+    if (isPhoto && !isJpg) {
+        errorEl.textContent = "Identification Photo must be a JPG/JPEG image.";
         return;
-    } else if (expectedDocType !== 'Passport Photo' && !file.type.includes('application/pdf')) {
+    } else if (!isPhoto && !isPdf) {
         errorEl.textContent = "Document must be a PDF file.";
         return;
     }

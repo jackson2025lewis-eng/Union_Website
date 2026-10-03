@@ -308,7 +308,8 @@ async function loadDashboardData() {
                     studyFrom: row['Study From'] || '',
                     studyTo: row['Study To'] || '',
                     passportDocUrl: row['Passport Document'] || '',
-                    passportPhotoUrl: row['Passport Photo'] || '',
+                    identificationPhotoUrl: row['Identification Photo'] || row['Passport Photo'] || '',
+                    passportPhotoUrl: row['Identification Photo'] || row['Passport Photo'] || '',
                     efroUrl: row['EFRO File'] || ''
                 };
             });
@@ -674,8 +675,8 @@ function openAppDetail(appId) {
     if (app.passportDocUrl) {
         contentHtml += `<a href="${app.passportDocUrl}" target="_blank" class="document-link"><i class="fa-solid fa-file-pdf"></i> Passport Document</a>`;
     }
-    if (app.passportPhotoUrl) {
-        contentHtml += `<a href="${app.passportPhotoUrl}" target="_blank" class="document-link"><i class="fa-solid fa-image"></i> Passport Photo</a>`;
+    if (app.identificationPhotoUrl || app.passportPhotoUrl) {
+        contentHtml += `<a href="${app.identificationPhotoUrl || app.passportPhotoUrl}" target="_blank" class="document-link"><i class="fa-solid fa-image"></i> Identification Photo</a>`;
     }
     if (app.efroUrl && app.type === 'CURRENT STUDENT') {
         contentHtml += `<a href="${app.efroUrl}" target="_blank" class="document-link"><i class="fa-solid fa-file-pdf"></i> EFRO File</a>`;
@@ -701,12 +702,12 @@ function openAppDetail(appId) {
             `;
         } else if (s === 'VERIFICATION_PENDING') {
             actionsHtml = `
-                <span style="color: var(--text-light); margin-right: 15px;">Waiting for applicant email reply (48 hrs)...</span>
+                <button class="secondary-btn" style="color: var(--primary); border-color: var(--primary);" onclick="resendVerificationCode('${app.id}')"><i class="fa-solid fa-rotate-right"></i> Resend Verification Code</button>
                 <button class="secondary-btn close-modal-btn">Close</button>
             `;
         } else if (s === 'NEEDS_CLARIFICATION') {
             actionsHtml = `
-                <span style="color: var(--text-light); margin-right: 15px;">Waiting for applicant to upload document...</span>
+                <button class="secondary-btn" style="color: var(--primary); border-color: var(--primary);" onclick="resendUploadLink('${app.id}')"><i class="fa-solid fa-rotate-right"></i> Resend Upload Link</button>
                 <button class="secondary-btn close-modal-btn">Close</button>
             `;
         }
@@ -755,6 +756,44 @@ async function updateAppStatus(newStatus, reason = '', docType = '') {
         }
     } catch (e) {
         alert('Network or server error: ' + (e.message || 'Please check your connection.'));
+    }
+}
+
+async function resendUploadLink(appId) {
+    if (!confirm('Generate and send a new document upload link with a fresh 24-hour expiry?')) return;
+    try {
+        const res = await sendBackendRequest({
+            action: 'resendUploadLink',
+            sessionToken: currentSessionToken,
+            applicationId: appId
+        });
+        if (res.success) {
+            alert(res.message || 'New document upload link sent successfully (24-hour expiry).');
+            loadDashboardData();
+        } else {
+            alert('Failed to resend link: ' + (res.message || 'Unknown error.'));
+        }
+    } catch (e) {
+        alert('Network or server error: ' + (e.message || 'Please try again.'));
+    }
+}
+
+async function resendVerificationCode(appId) {
+    if (!confirm('Generate and send a new verification code with a fresh 24-hour expiry?')) return;
+    try {
+        const res = await sendBackendRequest({
+            action: 'resendVerificationCode',
+            sessionToken: currentSessionToken,
+            applicationId: appId
+        });
+        if (res.success) {
+            alert(res.message || 'New verification code sent successfully (24-hour expiry).');
+            loadDashboardData();
+        } else {
+            alert('Failed to resend code: ' + (res.message || 'Unknown error.'));
+        }
+    } catch (e) {
+        alert('Network or server error: ' + (e.message || 'Please try again.'));
     }
 }
 
