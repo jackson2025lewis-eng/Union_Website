@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="Pay your membership dues for the Liberian Students Union in Odisha (LSUO)." />
+    <title>Pay Your Dues - LSUO</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="pay-dues.css" />
+    <link rel="icon" type="image/jpeg" href="assets/images/Logo.jpg" />
+  </head>
+  <body>
+    <a href="#main-content" class="skip-link">Skip to Main Content</a>
+    
+    <!-- Standard LSU Page Header -->
+    <header class="page-header" role="banner" style="position: relative;">
+      <div id="admin-trigger" style="position: absolute; top: 0; right: 0; width: 60px; height: 60px; z-index: 9999; cursor: default;" title=""></div>
+      <div class="top-bar">
+        <a class="top-email" href="mailto:info@lsuo.org"><i class="fa-regular fa-envelope"></i> info@lsuo.org</a>
+        <div class="top-social" aria-label="Social media links">
+          <a href="#" aria-label="Facebook"><i class="fa-brands fa-facebook-f"></i></a>
+          <a href="#" aria-label="WhatsApp"><i class="fa-brands fa-whatsapp"></i></a>
+          <a href="#" aria-label="LinkedIn"><i class="fa-brands fa-linkedin-in"></i></a>
+          <a href="#" aria-label="Website"><i class="fa-solid fa-globe"></i></a>
+        </div>
+      </div>
+      <div class="main-nav-row">
+        <button id="hamburgerBtn" class="hamburger-btn" aria-label="Open Menu" aria-expanded="false" aria-controls="sidebar">
+          <i class="fa-solid fa-bars" aria-hidden="true"></i>
+        </button>
+        <a class="brand-logo" href="index.html">
+          <img class="brand-icon" src="assets/images/Logo.jpg" alt="LSUO logo" />
+          <span class="brand-name">LSUO</span>
+        </a>
+      </div>
+    </header>
+
+    <!-- Standard LSU Mobile Sidebar -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <aside class="sidebar" id="sidebar" aria-label="Mobile Navigation">
+      <a class="brand-logo" href="index.html" style="margin-bottom: 20px;">
+        <img class="brand-icon" src="assets/images/Logo.jpg" alt="LSUO logo" />
+        <span class="brand-name">LSUO Menu</span>
+      </a>
+      <nav class="main-nav" aria-label="Main Navigation">
+        <a href="index.html" class="nav-link">Home</a>
+        <a href="about.html" class="nav-link">About</a>
+        <div class="nav-dropdown" id="chaptersDropdown">
+          <button class="nav-dropdown-btn nav-link" aria-expanded="false" aria-haspopup="true">Local Chapters <i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>
+          <div class="nav-dropdown-content">
+            <a href="soa-leadership.html" class="nav-link">SOA Chapter</a>
+            <a href="cv-raman-leadership.html" class="nav-link">CV Raman</a>
+            <a href="kiit-leadership.html" class="nav-link">KIIT</a>
+          </div>
+        </div>
+        <a href="alumni.html" class="nav-link">Alumni</a>
+        <a href="pay-dues.html" class="nav-link active">Pay Your Dues</a>
+        <a href="contact.html" class="nav-link">Contact</a>
+        <a href="membership/membership.html" class="primary-btn" style="text-align: center; margin-top: 10px;">Join Us</a>
+      </nav>
+    </aside>
+
+    <div class="page-shell">
+      <main class="content page-content" id="main-content" role="main">
+        <div style="margin-bottom: 24px;">
+          <a href="index.html" style="color: #2563eb; text-decoration: none; font-weight: 600; display: inline-flex; align-items: center; gap: 8px; transition: color 0.2s;">
+            <i class="fa-solid fa-arrow-left"></i> Back to Home
+          </a>
+        </div>
+
+        <div class="dues-app-container">
+          <!-- App Header matching Membership Form -->
+          <header class="dues-app-header">
+            <a href="javascript:void(0);" id="duesLogoLink" style="display: inline-block; cursor: pointer; text-decoration: none;">
+              <img src="assets/images/Logo.jpg" alt="LSUO Logo" class="dues-app-logo" id="duesAppLogo" title="LSUO" />
+            </a>
+            <h1>Liberian Students Union in Odisha</h1>
+            <span class="dues-portal-kicker">Dues Payment Portal</span>
+          </header>
+
+          <!-- =========================================================
+               VIEW 1: MEMBER EMAIL ACCESS (STEP 1)
+               ========================================================= -->
+          <div id="view-dues-email" class="dues-view-section active">
+            <div class="dues-card">
+              <h2>PAY YOUR DUES</h2>
+              <p class="dues-subtitle">
+                To begin dues payment, please enter your registered email address to verify your union membership.
+              </p>
+              
+              <form id="dues-email-form" onsubmit="event.preventDefault();">
+                <div class="dues-form-group">
+                  <label for="dues-member-email" class="dues-label">
+                    Registered Email Address <span class="required-star">★</span>
+                  </label>
+                  <input 
+                    type="email" 
+                    id="dues-member-email" 
+                    name="memberEmail" 
+                    class="dues-input" 
+                    placeholder="Enter your registered email address" 
+                    required 
+                  />
+                  <div class="dues-error-msg" id="dues-email-error"></div>
+                </div>
+
+                <button type="button" id="btn-dues-send-otp" class="dues-btn-primary dues-btn-block">
+                  <i class="fa-solid fa-paper-plane"></i> Send OTP
+                </button>
+              </form>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               VIEW 2: MEMBER OTP VERIFICATION (STEP 1B)
+               ========================================================= -->
+          <div id="view-dues-otp" class="dues-view-section">
+            <div class="dues-card">
+              <h2>VERIFY ACCESS</h2>
+              <p class="dues-subtitle">
+                An OTP has been sent to <strong id="dues-display-member-email" style="color: var(--primary-color);">your email</strong>.
+              </p>
+              
+              <form id="dues-otp-form" onsubmit="event.preventDefault();">
+                <div class="dues-form-group">
+                  <label for="dues-member-otp" class="dues-label">
+                    Enter OTP <span class="required-star">★</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    id="dues-member-otp" 
+                    name="memberOtp" 
+                    class="dues-input dues-otp-single-input" 
+                    placeholder="DUE###" 
+                    maxlength="6"
+                    required 
+                  />
+                  <div class="dues-input-hint">Format example: <strong>DUE527</strong> (DUE + 3 digits)</div>
+                  <div class="dues-error-msg" id="dues-otp-error"></div>
+                </div>
+
+                <div class="dues-btn-group-vertical">
+                  <button type="button" id="btn-dues-verify-otp" class="dues-btn-primary dues-btn-block">
+                    <i class="fa-solid fa-check-circle"></i> Verify OTP & Continue
+                  </button>
+                  <button type="button" id="btn-dues-back-to-email" class="dues-btn-secondary dues-btn-block">
+                    Back
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               VIEW 3: PAYMENT CHOICE (STEP 2)
+               ========================================================= -->
+          <div id="view-dues-choice" class="dues-view-section">
+            <div class="dues-card">
+              <h2>PAYMENT CATEGORY</h2>
+              <p class="dues-subtitle">How would you like to pay?</p>
+              
+              <div class="dues-type-selection">
+                <button type="button" class="dues-btn-type" id="btn-pay-my-dues">
+                  <div class="dues-btn-type-content">
+                    <h3>PAY MY DUES</h3>
+                    <p>Pay union dues for your own registered membership.</p>
+                  </div>
+                  <i class="fa-solid fa-user dues-btn-type-icon"></i>
+                </button>
+
+                <button type="button" class="dues-btn-type" id="btn-pay-other-members">
+                  <div class="dues-btn-type-content">
+                    <h3>PAY FOR OTHER MEMBERS</h3>
+                    <p>Pay union dues on behalf of one or two other registered members.</p>
+                  </div>
+                  <i class="fa-solid fa-users dues-btn-type-icon"></i>
+                </button>
+              </div>
+
+              <button type="button" id="btn-dues-back-to-otp" class="dues-btn-secondary dues-btn-block" style="margin-top: 10px;">
+                Back
+              </button>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               VIEW 3B: SELF PAYMENT AMOUNT ENTRY
+               ========================================================= -->
+          <div id="view-dues-self-amount" class="dues-view-section">
+            <div class="dues-card">
+              <h2>ENTER DUES AMOUNT</h2>
+              <p class="dues-subtitle">Enter the amount of dues you wish to pay for yourself.</p>
+
+              <div class="dues-member-amount-card">
+                <div class="dues-member-amount-card-header">
+                  <i class="fa-solid fa-user-check"></i> <span id="self-member-name">Member Name</span>
+                </div>
+                <div style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">
+                  Email: <span id="self-member-email" style="font-weight: 600; color: var(--text-main);"></span> | 
+                  ID: <span id="self-member-id" style="font-weight: 600; color: var(--primary-color);"></span>
+                </div>
+
+                <div class="dues-form-group" style="margin-bottom: 0;">
+                  <label for="self-dues-amount-input" class="dues-label">
+                    Amount (₹) <span class="required-star">★</span>
+                  </label>
+                  <input 
+                    type="number" 
+                    id="self-dues-amount-input" 
+                    class="dues-input" 
+                    placeholder="Enter amount (e.g. 500)" 
+                    min="1" 
+                    step="1" 
+                    required 
+                  />
+                  <div class="dues-input-hint">There is no fixed dues amount. Enter the amount to pay.</div>
+                  <div class="dues-error-msg" id="self-amount-error"></div>
+                </div>
+              </div>
+
+              <div class="dues-btn-group-vertical">
+                <button type="button" id="btn-self-continue-to-payment" class="dues-btn-primary dues-btn-block">
+                  Continue to Payment Method <i class="fa-solid fa-arrow-right"></i>
+                </button>
+                <button type="button" id="btn-self-back-to-choice" class="dues-btn-secondary dues-btn-block">
+                  Back
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               VIEW 4: PAY FOR OTHER MEMBERS FORM (STEP 3)
+               ========================================================= -->
+          <div id="view-dues-others" class="dues-view-section">
+            <div class="dues-card dues-card-wide">
+              <h2>PAY FOR OTHER MEMBERS</h2>
+              <p class="dues-subtitle">
+                Select member count, verify their registered email address, and enter individual amounts:
+              </p>
+              
+              <div class="dues-count-selection" role="group" aria-label="Select member count">
+                <button type="button" class="dues-count-btn active" id="btn-count-one">
+                  <i class="fa-solid fa-user"></i> One Person
+                </button>
+                <button type="button" class="dues-count-btn" id="btn-count-two">
+                  <i class="fa-solid fa-user-group"></i> Two Persons
+                </button>
+              </div>
+
+              <form id="dues-others-form" onsubmit="event.preventDefault();">
+                <!-- Member 1 Container -->
+                <div class="dues-member-amount-card" id="card-other-member-1">
+                  <div class="dues-member-amount-card-header">
+                    <i class="fa-solid fa-user"></i> Member 1 Details
+                  </div>
+                  
+                  <div class="dues-form-group">
+                    <label for="dues-other-email-1" class="dues-label">
+                      Registered Email Address <span class="required-star">★</span>
+                    </label>
+                    <div class="dues-input-with-action">
+                      <input 
+                        type="email" 
+                        id="dues-other-email-1" 
+                        name="otherMemberEmail1" 
+                        class="dues-input" 
+                        placeholder="Enter registered member email" 
+                        required 
+                      />
+                      <button type="button" id="btn-verify-member-1" class="dues-btn-secondary dues-btn-inline">
+                        <i class="fa-solid fa-magnifying-glass"></i> Verify
+                      </button>
+                    </div>
+                    <div id="badge-member-1" class="dues-member-verified-badge" style="display: none;">
+                      <i class="fa-solid fa-circle-check"></i>
+                      <span class="name" id="name-member-1"></span>
+                      <span class="id" id="id-member-1"></span>
+                    </div>
+                    <div class="dues-error-msg" id="error-member-1"></div>
+                  </div>
+
+                  <div class="dues-form-group" style="margin-bottom: 0;">
+                    <label for="dues-other-amount-1" class="dues-label">
+                      Amount for Member 1 (₹) <span class="required-star">★</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      id="dues-other-amount-1" 
+                      class="dues-input other-amount-input" 
+                      placeholder="Enter amount (e.g. 500)" 
+                      min="1" 
+                      step="1" 
+                      required 
+                    />
+                  </div>
+                </div>
+
+                <!-- Member 2 Container (Shown only when Two Persons selected) -->
+                <div class="dues-member-amount-card" id="card-other-member-2" style="display: none;">
+                  <div class="dues-member-amount-card-header">
+                    <i class="fa-solid fa-user"></i> Member 2 Details
+                  </div>
+                  
+                  <div class="dues-form-group">
+                    <label for="dues-other-email-2" class="dues-label">
+                      Registered Email Address <span class="required-star">★</span>
+                    </label>
+                    <div class="dues-input-with-action">
+                      <input 
+                        type="email" 
+                        id="dues-other-email-2" 
+                        name="otherMemberEmail2" 
+                        class="dues-input" 
+                        placeholder="Enter second registered member email" 
+                      />
+                      <button type="button" id="btn-verify-member-2" class="dues-btn-secondary dues-btn-inline">
+                        <i class="fa-solid fa-magnifying-glass"></i> Verify
+                      </button>
+                    </div>
+                    <div id="badge-member-2" class="dues-member-verified-badge" style="display: none;">
+                      <i class="fa-solid fa-circle-check"></i>
+                      <span class="name" id="name-member-2"></span>
+                      <span class="id" id="id-member-2"></span>
+                    </div>
+                    <div class="dues-error-msg" id="error-member-2"></div>
+                  </div>
+
+                  <div class="dues-form-group" style="margin-bottom: 0;">
+                    <label for="dues-other-amount-2" class="dues-label">
+                      Amount for Member 2 (₹) <span class="required-star">★</span>
+                    </label>
+                    <input 
+                      type="number" 
+                      id="dues-other-amount-2" 
+                      class="dues-input other-amount-input" 
+                      placeholder="Enter amount (e.g. 300)" 
+                      min="1" 
+                      step="1" 
+                    />
+                  </div>
+                </div>
+
+                <!-- Small notice area -->
+                <div class="dues-member-notice-area">
+                  <i class="fa-solid fa-shield-halved"></i>
+                  <div>
+                    Only registered full LSU members can be paid for. The payer email cannot be added in "Pay for Other Members".
+                  </div>
+                </div>
+
+                <div class="dues-error-msg" id="dues-others-general-error"></div>
+
+                <div class="dues-btn-group-vertical" style="margin-top: 20px;">
+                  <button type="button" id="btn-dues-continue-to-payment" class="dues-btn-primary dues-btn-block">
+                    Continue to Payment Summary <i class="fa-solid fa-arrow-right"></i>
+                  </button>
+                  <button type="button" id="btn-dues-back-to-choice" class="dues-btn-secondary dues-btn-block">
+                    Back
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               VIEW 5: PAYMENT SUMMARY & PAYMENT METHOD (STEPS 4, 5, 6)
+               ========================================================= -->
+          <div id="view-dues-payment" class="dues-view-section">
+            <div class="dues-card dues-card-wide">
+              <h2>PAYMENT SUMMARY & METHOD</h2>
+              <p class="dues-subtitle">Review your summary and select your payment method.</p>
+
+              <!-- Payment Summary Card (Step 4 & 7) -->
+              <h3>PAYMENT SUMMARY</h3>
+              <div class="dues-summary-box">
+                <div class="dues-summary-item">
+                  <span class="label">Payer:</span>
+                  <span class="value" id="summary-payer-display">Loading...</span>
+                </div>
+                
+                <div style="margin-top: 10px; font-weight: 600; font-size: 0.9rem; color: var(--primary-color);">
+                  Member(s) being paid for:
+                </div>
+                <div class="dues-summary-members-list" id="summary-members-container">
+                  <!-- Dynamically injected rows with name, email, ID, and amount -->
+                </div>
+
+                <div class="dues-summary-item total-item">
+                  <span class="label">Total Amount:</span>
+                  <span class="value" id="summary-total-display">₹0.00</span>
+                </div>
+              </div>
+
+              <!-- Payment Method Section (Step 5 & 6) -->
+              <h3>SELECT PAYMENT METHOD</h3>
+              <p class="dues-subtitle text-left" style="margin-bottom: 16px;">
+                How would you like to pay?
+              </p>
+
+              <div class="dues-method-selector" role="tablist" aria-label="Payment Method Selection">
+                <button type="button" class="dues-method-btn active" id="btn-method-online">
+                  <i class="fa-solid fa-qrcode"></i> Online / UPI
+                </button>
+                <button type="button" class="dues-method-btn" id="btn-method-cash">
+                  <i class="fa-solid fa-money-bill-wave"></i> Cash
+                </button>
+              </div>
+
+              <!-- FORM A: ONLINE / UPI FORM -->
+              <div id="form-online-upi-section">
+                <div class="dues-amount-callout">
+                  <span class="text">Total Amount:</span>
+                  <span class="amount" id="online-total-callout">₹0.00</span>
+                </div>
+
+                <!-- LSU UPI QR Code Container -->
+                <div class="dues-qr-container">
+                  <div class="dues-qr-image-wrap">
+                    <img src="assets/images/LSU-QR.jpeg" alt="LSU UPI QR Code for Dues Payment" class="dues-qr-image" />
+                  </div>
+                  <span class="dues-qr-tag"><i class="fa-solid fa-at"></i> LSU Official UPI</span>
+                  <p class="dues-qr-instruction">Scan with Google Pay, PhonePe, Paytm, BHIM, or any UPI app</p>
+                </div>
+
+                <form id="dues-online-form" onsubmit="event.preventDefault();">
+                  <div class="dues-form-group">
+                    <label for="dues-upi-ref" class="dues-label">
+                      UPI Ref No. <span class="required-star">★</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      id="dues-upi-ref" 
+                      name="upiRef" 
+                      class="dues-input" 
+                      placeholder="Enter 12-digit UPI reference number / UTR" 
+                      required 
+                    />
+                    <div class="dues-input-hint">
+                      Enter the UPI transaction/reference number shown in your Google Pay, PhonePe, Paytm, or other UPI transaction details.
+                    </div>
+                  </div>
+
+                  <div class="dues-form-group">
+                    <label for="dues-online-date" class="dues-label">
+                      Payment Date <span class="required-star">★</span>
+                    </label>
+                    <input 
+                      type="date" 
+                      id="dues-online-date" 
+                      name="onlinePaymentDate" 
+                      class="dues-input" 
+                      required 
+                    />
+                  </div>
+
+                  <label class="dues-checkbox-container">
+                    <input type="checkbox" id="dues-online-confirm" required />
+                    <span>I confirm that I have made the online transfer to LSUO and the UPI reference number entered above is accurate.</span>
+                  </label>
+
+                  <div class="dues-error-msg" id="dues-online-submit-error"></div>
+
+                  <div class="dues-btn-group-vertical">
+                    <button type="button" id="btn-submit-online-payment" class="dues-btn-primary dues-btn-block">
+                      <i class="fa-solid fa-paper-plane"></i> Submit Payment
+                    </button>
+                    <button type="button" id="btn-dues-back-from-payment" class="dues-btn-secondary dues-btn-block">
+                      Back
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              <!-- FORM B: CASH FORM -->
+              <div id="form-cash-section" style="display: none;">
+                <div class="dues-amount-callout">
+                  <span class="text">Total Amount:</span>
+                  <span class="amount" id="cash-total-callout">₹0.00</span>
+                </div>
+
+                <form id="dues-cash-form" onsubmit="event.preventDefault();">
+                  <div class="dues-form-group">
+                    <label for="dues-cash-date" class="dues-label">
+                      Cash Payment Date <span class="required-star">★</span>
+                    </label>
+                    <input 
+                      type="date" 
+                      id="dues-cash-date" 
+                      name="cashPaymentDate" 
+                      class="dues-input" 
+                      required 
+                    />
+                  </div>
+
+                  <div class="dues-form-group">
+                    <label for="dues-cash-receiver-name" class="dues-label">
+                      Name of Individual Who Received the Cash <span class="required-star">★</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      id="dues-cash-receiver-name" 
+                      name="cashReceiverName" 
+                      class="dues-input" 
+                      placeholder="Enter the authorized officer's full name" 
+                      required 
+                    />
+                  </div>
+
+                  <div class="dues-form-group">
+                    <label for="dues-cash-receiver-role" class="dues-label">
+                      Position/Role of Individual Who Received the Cash <span class="required-star">★</span>
+                    </label>
+                    <input 
+                      type="text" 
+                      id="dues-cash-receiver-role" 
+                      name="cashReceiverRole" 
+                      class="dues-input" 
+                      placeholder="e.g., Financial Secretary, Chapter President, Treasurer" 
+                      required 
+                    />
+                  </div>
+
+                  <label class="dues-checkbox-container">
+                    <input type="checkbox" id="dues-cash-confirm" required />
+                    <span>I confirm that the cash payment was handed directly to the authorized union official named above.</span>
+                  </label>
+
+                  <div class="dues-error-msg" id="dues-cash-submit-error"></div>
+
+                  <div class="dues-btn-group-vertical">
+                    <button type="button" id="btn-submit-cash-payment" class="dues-btn-primary dues-btn-block">
+                      <i class="fa-solid fa-paper-plane"></i> Submit Payment
+                    </button>
+                    <button type="button" id="btn-dues-back-from-cash" class="dues-btn-secondary dues-btn-block">
+                      Back
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               VIEW 6: PAYMENT SUBMISSION SUCCESS VIEW
+               ========================================================= -->
+          <div id="view-dues-success" class="dues-view-section">
+            <div class="dues-card" style="text-align: center;">
+              <div style="width: 64px; height: 64px; border-radius: 50%; background: #dcfce7; color: #16a34a; display: flex; align-items: center; justify-content: center; font-size: 2rem; margin: 0 auto 16px;">
+                <i class="fa-solid fa-circle-check"></i>
+              </div>
+              <h2>PAYMENT SUBMITTED SUCCESSFULLY</h2>
+              <p class="dues-subtitle">
+                Your payment has been submitted and is awaiting LSU administrator verification.
+              </p>
+              
+              <div class="dues-summary-box" style="text-align: left;">
+                <div class="dues-summary-item">
+                  <span class="label">Payment ID:</span>
+                  <span class="value" id="success-payment-id" style="font-family: monospace; font-size: 1.05rem;"></span>
+                </div>
+                <div class="dues-summary-item">
+                  <span class="label">Total Amount:</span>
+                  <span class="value" id="success-total-amount" style="font-weight: 700;"></span>
+                </div>
+                <div class="dues-summary-item">
+                  <span class="label">Status:</span>
+                  <span class="value" style="color: #b45309; font-weight: 700;">PENDING VERIFICATION</span>
+                </div>
+              </div>
+
+              <div class="dues-btn-group-vertical">
+                <a href="index.html" class="dues-btn-primary dues-btn-block">
+                  <i class="fa-solid fa-house"></i> Return to Homepage
+                </a>
+                <button type="button" id="btn-dues-reset-flow" class="dues-btn-secondary dues-btn-block">
+                  Make Another Submission
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               ADMIN VIEW 1: ADMINISTRATOR LOGIN (STEP 3)
+               ========================================================= -->
+          <div id="view-dues-admin-login" class="dues-view-section">
+            <div class="dues-card">
+              <div class="dues-admin-badge">
+                <i class="fa-solid fa-shield-halved"></i> Payment Administrator Access
+              </div>
+              <h2>DUES ADMINISTRATION</h2>
+              <p class="dues-subtitle">
+                Enter your authorized financial administrator email address to receive access verification code.
+              </p>
+
+              <form id="dues-admin-login-form" onsubmit="event.preventDefault();">
+                <div class="dues-form-group">
+                  <label for="dues-admin-email" class="dues-label">
+                    Administrator Email <span class="required-star">★</span>
+                  </label>
+                  <input 
+                    type="email" 
+                    id="dues-admin-email" 
+                    name="adminEmail" 
+                    class="dues-input" 
+                    placeholder="Enter administrator email" 
+                    required 
+                  />
+                  <div class="dues-error-msg" id="dues-admin-email-error"></div>
+                </div>
+
+                <div class="dues-btn-group-vertical">
+                  <button type="button" id="btn-dues-admin-send-otp" class="dues-btn-primary dues-btn-block">
+                    <i class="fa-solid fa-paper-plane"></i> Send OTP
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               ADMIN VIEW 2: ADMINISTRATOR OTP VERIFICATION (STEP 3B)
+               ========================================================= -->
+          <div id="view-dues-admin-otp" class="dues-view-section">
+            <div class="dues-card">
+              <div class="dues-admin-badge">
+                <i class="fa-solid fa-shield-halved"></i> Payment Administrator Verification
+              </div>
+              <h2>ENTER ADMIN OTP</h2>
+              <p class="dues-subtitle">
+                A verification code has been sent to your administrator email.
+              </p>
+
+              <form id="dues-admin-otp-form" onsubmit="event.preventDefault();">
+                <div class="dues-form-group">
+                  <label for="dues-admin-otp" class="dues-label">
+                    Enter OTP <span class="required-star">★</span>
+                  </label>
+                  <input 
+                    type="text" 
+                    id="dues-admin-otp" 
+                    name="adminOtp" 
+                    class="dues-input dues-otp-single-input" 
+                    placeholder="FIN###LSU" 
+                    maxlength="9"
+                    required 
+                  />
+                  <div class="dues-input-hint">Format example: <strong>FIN527LSU</strong> (FIN + 3 digits + LSU)</div>
+                  <div class="dues-error-msg" id="dues-admin-otp-error"></div>
+                </div>
+
+                <div class="dues-btn-group-vertical">
+                  <button type="button" id="btn-dues-admin-verify-otp" class="dues-btn-primary dues-btn-block">
+                    <i class="fa-solid fa-lock-open"></i> Verify Access
+                  </button>
+                  <button type="button" id="btn-dues-admin-back-to-login" class="dues-btn-secondary dues-btn-block">
+                    Back
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               ADMIN VIEW 3: DUES ADMINISTRATION DASHBOARD
+               ========================================================= -->
+          <div id="view-dues-admin-dashboard" class="dues-view-section">
+            <div class="dues-card dues-card-wide">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 14px; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
+                <div>
+                  <div class="dues-admin-badge" style="margin-bottom: 4px;">
+                    <i class="fa-solid fa-shield-halved"></i> Financial Administration
+                  </div>
+                  <h2 style="text-align: left; margin: 0; font-size: 1.3rem;">Dues Management Portal</h2>
+                </div>
+                <button type="button" id="btn-dues-admin-logout" class="dues-btn-secondary" style="padding: 6px 14px; font-size: 0.88rem;">
+                  <i class="fa-solid fa-right-from-bracket"></i> Exit Admin
+                </button>
+              </div>
+
+              <div class="dues-member-notice-area" style="background: #eff6ff; border-color: #bfdbfe; margin-bottom: 20px;">
+                <i class="fa-solid fa-user-shield" style="color: #2563eb;"></i>
+                <div>
+                  <strong style="color: #1e40af;">Chief Administrator Control:</strong>
+                  <p style="margin: 2px 0 0; font-size: 0.85rem;">
+                    Administrator permissions and accounts continue to be managed centrally under the LSU database system governed by the Chief Administrator.
+                  </p>
+                </div>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <h3 style="margin: 0; border: none; padding: 0;">PENDING DUES PAYMENTS</h3>
+                <button type="button" id="btn-refresh-pending-payments" class="dues-btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;">
+                  <i class="fa-solid fa-rotate-right"></i> Refresh
+                </button>
+              </div>
+
+              <div id="admin-pending-alert" class="dues-success-msg" style="margin-bottom: 14px;"></div>
+              <div id="admin-pending-error" class="dues-error-msg" style="margin-bottom: 14px;"></div>
+
+              <div id="admin-pending-payments-list">
+                <!-- Dynamically populated payment cards or empty notice -->
+              </div>
+            </div>
+          </div>
+
+          <!-- REJECTION REASON MODAL -->
+          <div class="dues-modal-backdrop" id="duesRejectionModal">
+            <div class="dues-modal-card">
+              <h3><i class="fa-solid fa-triangle-exclamation"></i> Reject Payment</h3>
+              <p>Please enter the specific reason for rejecting this dues payment submission:</p>
+              <textarea id="rejectionReasonInput" class="dues-modal-textarea" placeholder="Provide rejection details for the payer (required)..."></textarea>
+              <div class="dues-error-msg" id="rejectionModalError" style="margin-bottom: 12px;"></div>
+              <div style="display: flex; justify-content: flex-end; gap: 10px;">
+                <button type="button" id="btnCancelRejection" class="dues-btn-secondary">Cancel</button>
+                <button type="button" id="btnConfirmRejection" class="dues-btn-primary dues-btn-danger">Confirm Rejection</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+
+    <!-- Standard LSU Footer -->
+    <footer class="site-footer" role="contentinfo">
+      <p class="footer-motto">Unity, Excellence, and Service</p>
+      <p>&copy; 2025 Liberian Student Union in Odisha. All rights reserved.</p>
+    </footer>
+
+    <!-- Dues Portal Controller Script -->
+    <script src="pay-dues.js"></script>
+    <script>
+      // Hidden Administrator Trigger on page header (for membership DB)
+      const adminTrigger = document.getElementById('admin-trigger');
+      if (adminTrigger) {
+        let adminClickCount = 0;
+        let adminClickTimer;
+        adminTrigger.addEventListener('click', (e) => {
+          e.preventDefault();
+          adminClickCount++;
+          clearTimeout(adminClickTimer);
+          if (adminClickCount >= 4) {
+            window.location.href = 'admin/admin.html';
+            adminClickCount = 0;
+          } else {
+            adminClickTimer = setTimeout(() => { adminClickCount = 0; }, 2000);
+          }
+        });
+      }
+    </script>
+  </body>
+</html>

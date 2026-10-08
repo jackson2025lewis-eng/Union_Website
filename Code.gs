@@ -1,10 +1,10 @@
 
-/**
+
  * LSU MEMBERSHIP BACKEND
  * Google Apps Script Web App
  * Database: Google Sheets
  * Files: Google Drive
- */
+
 
 const CONFIG = {
   SHEET_NAME: "Members",
