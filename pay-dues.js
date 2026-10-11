@@ -26,7 +26,10 @@
       try {
         result = JSON.parse(text);
       } catch (e) {
-        return { success: false, message: 'Invalid server response: ' + text };
+        throw new Error('Invalid server response: ' + text);
+      }
+      if (!response.ok && !result.success) {
+        throw new Error(result.message || 'Backend request failed.');
       }
       return result;
     } catch (err) {

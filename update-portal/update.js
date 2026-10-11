@@ -1,3 +1,4 @@
+const BACKEND_URL = '/api/backend';
 const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx65PRCECX0_xq-N9cpygnhG24rC0cYfW7V5PCYNMjEDmDSg9zuv3Mfy75QYeEtoLbfGw/exec';
 let updateToken = null;
 let expectedDocType = null;
@@ -18,9 +19,9 @@ function showView(viewName) {
 
 async function sendBackendRequest(payload) {
     try {
-        const response = await fetch(SCRIPT_URL, {
+        const response = await fetch(BACKEND_URL, {
             method: 'POST',
-            headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
         const text = await response.text();
@@ -28,16 +29,34 @@ async function sendBackendRequest(payload) {
         try {
             result = JSON.parse(text);
         } catch (parseErr) {
-            console.error("Non-JSON backend response:", text);
-            if (text.includes("<!DOCTYPE") || text.includes("<html")) {
-                throw new Error("Unable to connect to Google Apps Script. Please verify the Web App deployment access settings.");
-            }
-            throw new Error(text || "Invalid response format from server.");
+            console.error("Non-JSON backend response from proxy:", text);
+            throw new Error("Invalid response format from server.");
         }
         if (!result.success) throw new Error(result.message || "Request failed.");
         return result;
-    } catch (error) {
-        throw new Error(error.message || 'Network error.');
+    } catch (proxyError) {
+        // Direct resilient fallback to Apps Script URL if proxy is unreachable
+        try {
+            const fbResponse = await fetch(SCRIPT_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+                body: JSON.stringify(payload)
+            });
+            const fbText = await fbResponse.text();
+            let fbResult;
+            try {
+                fbResult = JSON.parse(fbText);
+            } catch (fbParseErr) {
+                if (fbText.includes("<!DOCTYPE") || fbText.includes("<html")) {
+                    throw new Error("Unable to connect to Google Apps Script. Please verify Web App deployment access.");
+                }
+                throw new Error(fbText || "Invalid response format from server.");
+            }
+            if (!fbResult.success) throw new Error(fbResult.message || "Request failed.");
+            return fbResult;
+        } catch (fbErr) {
+            throw new Error(fbErr.message || 'Network error: Unable to connect to LSU backend.');
+        }
     }
 }
 
