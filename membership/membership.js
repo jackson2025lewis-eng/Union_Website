@@ -125,7 +125,8 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const result = await sendBackendRequest({
                 action: 'sendOTP',
-                email: emailInput.value
+                email: emailInput.value,
+                turnstileToken: turnstileResponse ? turnstileResponse.value : ''
             });
             
             if (result.success || result.status === 'success') {
@@ -146,6 +147,9 @@ document.addEventListener('DOMContentLoaded', () => {
             emailInput.parentElement.classList.add('has-error');
             submitBtn.textContent = originalBtnText;
             submitBtn.disabled = false;
+            if (typeof turnstile !== 'undefined' && turnstile.reset) {
+                try { turnstile.reset(); } catch (tErr) {}
+            }
         }
     });
 
@@ -237,6 +241,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             
             if (result.success || result.status === 'success') {
+                formData.verificationToken = result.verificationToken;
+                if (result.verificationToken) {
+                    sessionStorage.setItem('lsu_applicant_token', result.verificationToken);
+                    sessionStorage.setItem('lsu_applicant_email', formData.email);
+                }
                 showView('view-type');
                 submitBtn.textContent = originalBtnText;
                 submitBtn.disabled = false;
@@ -535,8 +544,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     dobFormatted = `${mm}/${dd}/${yyyy}`; // Format as MM/DD/YYYY
                 }
 
+                const verificationToken = formData.verificationToken || sessionStorage.getItem('lsu_applicant_token') || '';
+                if (!verificationToken) {
+                    alert('Your email verification session has expired or is missing. Please verify your email first.');
+                    showView('view-email');
+                    submitBtn.textContent = originalBtnText;
+                    submitBtn.disabled = false;
+                    return;
+                }
+
                 const payload = {
                     action: 'submitApplication',
+                    verificationToken: verificationToken,
                     data: {
                         "Membership Type": membershipType === 'student' ? 'CURRENT STUDENT' : 'ALUMNI',
                         "First Name": formData.firstName || '',
@@ -575,6 +594,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const result = await sendBackendRequest(payload);
                 
                 if (result.success || result.status === 'success') {
+                    // Clear used verification session from storage
+                    sessionStorage.removeItem('lsu_applicant_token');
+                    sessionStorage.removeItem('lsu_applicant_email');
+                    
                     // Show confirmation
                     formWrapper.innerHTML = `
                         <div class="card" style="text-align: center; padding: 40px 24px; margin-top: 20px;">

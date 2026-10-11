@@ -1,6 +1,8 @@
 /*******************************************************
- * LSU MEMBERSHIP DATABASE - GOOGLE APPS SCRIPT
- * Complete Resilient Backend for LSUO Membership & Administrator Portal
+ * LSU MEMBERSHIP & DUES PAYMENT DATABASE - GOOGLE APPS SCRIPT
+ * Unified Resilient Backend for LSUO Membership, Dues Payments & Admin Portals
+ * Fully Hardened with Security Tokens, Bot Mitigation, Expiration Housekeeping,
+ * and Transaction Locking.
  *******************************************************/
 
 const CONFIG = {
@@ -22,6 +24,19 @@ const CHIEF_ADMIN_EMAIL = "solojackson2022@gmail.com";
 const ADMIN_SHEET_NAME = "Administrators";
 const ADMIN_SESSION_TTL_SECONDS = 900;
 const ADMIN_SESSION_PREFIX = "LSU_ADMIN_SESSION_";
+
+const LSU_PAYMENT_CONFIG = {
+  PAYMENT_SHEET_NAME: "Payments",
+  ALLOCATION_SHEET_NAME: "PaymentAllocations",
+  MEMBER_OTP_PREFIX: "LSU_DUE_OTP_",
+  MEMBER_SESSION_PREFIX: "LSU_DUE_MEMBER_SESSION_",
+  PAYMENT_ADMIN_OTP_PREFIX: "LSU_PAYMENT_ADMIN_OTP_",
+  PAYMENT_ADMIN_SESSION_PREFIX: "LSU_PAYMENT_ADMIN_SESSION_",
+  OTP_EXPIRY_MINUTES: 5,
+  SESSION_TTL_SECONDS: 900,
+  MAX_OTP_ATTEMPTS: 3,
+  MAX_OTHER_MEMBERS: 2
+};
 
 /*******************************************************
  * HELPERS & RESILIENT SHEET INITIALIZERS
@@ -52,10 +67,8 @@ function findColumnIndex(headers, ...possibleNames) {
   for (const name of possibleNames) {
     const cleanName = String(name || "").trim().toLowerCase();
     if (!cleanName) continue;
-    // 1. Exact match (case-insensitive)
     let idx = headers.findIndex(h => String(h || "").trim().toLowerCase() === cleanName);
     if (idx !== -1) return idx;
-    // 2. Contains match
     idx = headers.findIndex(h => {
       const hClean = String(h || "").trim().toLowerCase();
       return hClean.includes(cleanName) || cleanName.includes(hClean);
@@ -67,7 +80,6 @@ function findColumnIndex(headers, ...possibleNames) {
 
 function findEmailInRow(row, headers) {
   if (!row) return "";
-  
   if (headers && headers.length > 0) {
     const emailHeaders = [
       "Applicant Email", "Email", "Email Address", "Applicant's Email",
@@ -93,7 +105,6 @@ function findEmailInRow(row, headers) {
     const found = extractEmail(row[c]);
     if (found) return found;
   }
-  
   return "";
 }
 
@@ -184,6 +195,32 @@ function ensureAdministratorSheet() {
   return sheet;
 }
 
+function lsuPaymentSheet_(name, headers) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  } else {
+    const current = sheet.getRange(1, 1, 1, headers.length).getDisplayValues()[0];
+    if (current.some((v, i) => String(v || "").trim() !== headers[i])) {
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    }
+  }
+  return sheet;
+}
+
+function ensurePaymentSheets() {
+  lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, [
+    "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
+    "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
+    "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
+  ]);
+  lsuPaymentSheet_(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME, [
+    "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status"
+  ]);
+}
+
 function sendSecureEmail(toEmail, subject, bodyText) {
   const cleanEmail = extractEmail(toEmail);
   if (!cleanEmail) {
@@ -267,6 +304,83 @@ function archiveOldDocument(oldUrl) {
     }
   } catch (e) {
     // Ignore errors if file doesn't exist
+  }
+}
+
+/*******************************************************
+ * SECURITY, ANTI-BOT & TOKEN HOUSEKEEPING
+ *******************************************************/
+
+/**
+ * Validates Cloudflare Turnstile token server-side via official Siteverify endpoint.
+ * Resilient: enforces verification if secret is configured in Script Properties.
+ */
+function validateCloudflareTurnstile_(turnstileToken) {
+  const turnstileSecret = PropertiesService.getScriptProperties().getProperty("CLOUDFLARE_TURNSTILE_SECRET");
+  if (!turnstileSecret) {
+    Logger.log("Notice: CLOUDFLARE_TURNSTILE_SECRET is not configured in Script Properties. Turnstile validation skipped.");
+    return true;
+  }
+  
+  const token = String(turnstileToken || "").trim();
+  if (!token) {
+    throw new Error("CAPTCHA verification is required. Please complete the CAPTCHA.");
+  }
+  
+  try {
+    const response = UrlFetchApp.fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+      method: "post",
+      payload: {
+        secret: turnstileSecret,
+        response: token
+      },
+      muteHttpExceptions: true
+    });
+    
+    const result = JSON.parse(response.getContentText());
+    if (!result || result.success !== true) {
+      const errorCodes = (result && Array.isArray(result['error-codes'])) ? result['error-codes'].join(', ') : 'Verification rejected';
+      Logger.log("Cloudflare Turnstile verification failed. Code: " + errorCodes);
+      throw new Error("CAPTCHA verification failed or has expired. Please refresh the page and try again.");
+    }
+    return true;
+  } catch (e) {
+    if (e.message && e.message.includes("CAPTCHA")) {
+      throw e;
+    }
+    Logger.log("Cloudflare Turnstile network error: " + e.message);
+    throw new Error("Unable to verify CAPTCHA with Cloudflare. Please try again.");
+  }
+}
+
+/**
+ * Safely prunes expired document update and applicant verification tokens from PropertiesService.
+ */
+function cleanupExpiredTokens_() {
+  try {
+    const props = PropertiesService.getScriptProperties();
+    const allProps = props.getProperties();
+    const now = Date.now();
+    const keysToDelete = [];
+    
+    for (const [key, val] of Object.entries(allProps)) {
+      if (key.startsWith("DOC_UPDATE_") || key.startsWith("VERIF_TOKEN_")) {
+        try {
+          const parsed = JSON.parse(val);
+          if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() < now) {
+            keysToDelete.push(key);
+          }
+        } catch (e) {
+          keysToDelete.push(key);
+        }
+      }
+    }
+    
+    for (const k of keysToDelete) {
+      props.deleteProperty(k);
+    }
+  } catch (err) {
+    Logger.log("cleanupExpiredTokens_ error: " + err.toString());
   }
 }
 
@@ -412,7 +526,6 @@ function sendAdministratorOTP(email) {
   const otp = "ADM" + Math.floor(100 + Math.random() * 900) + "LSU";
   const expiresAt = new Date(Date.now() + CONFIG.OTP_EXPIRY_MINUTES * 60000);
 
-  // Fast single-batch update for OTP columns (cols 7 to 10)
   sheet.getRange(rowNumber, 7, 1, 4).setValues([[otp, expiresAt, "No", 0]]);
 
   sendSecureEmail(
@@ -1028,6 +1141,7 @@ function submitDocumentUpdate(payload) {
     }
     
     PropertiesService.getScriptProperties().deleteProperty('DOC_UPDATE_' + token);
+    cleanupExpiredTokens_();
     
     const applicantEmail = extractEmail(data.email) || findEmailInRow(targetRowData, headers);
     if (applicantEmail) {
@@ -1122,11 +1236,21 @@ function processVerificationReplies(payload) {
 }
 
 /*******************************************************
- * FRONTEND USER OTP & SUBMISSION
+ * FRONTEND USER OTP & SECURE SUBMISSION
  *******************************************************/
-function sendOTP(email) {
+function sendOTP(email, turnstileToken) {
   email = extractEmail(email);
   if (!validateEmail(email)) throw new Error("Please enter a valid email address.");
+  
+  // 1. Server-side Turnstile CAPTCHA verification
+  validateCloudflareTurnstile_(turnstileToken);
+  
+  // 2. Resend Cooldown & Rate Limiting (60 seconds per email)
+  const cooldownKey = "LSU_OTP_COOLDOWN_" + email;
+  const inCooldown = CacheService.getScriptCache().get(cooldownKey);
+  if (inCooldown) {
+    throw new Error("Please wait 60 seconds before requesting a new verification code.");
+  }
   
   const lock = LockService.getScriptLock();
   try {
@@ -1142,12 +1266,15 @@ function sendOTP(email) {
     
     sheet.appendRow([new Date(), email, otp, expiresAt, "No", 0]);
     
+    // Set 60-second cooldown in cache
+    CacheService.getScriptCache().put(cooldownKey, "1", 60);
+    
     sendSecureEmail(
       email,
       "LSU Email Verification Code",
       `Dear Applicant,\n\nYour LSU email verification code is:\n\n${otp}\n\nThis verification code will expire in ${CONFIG.OTP_EXPIRY_MINUTES} minutes.\n\nIf you did not request this, please ignore this email.\n\nRegards,\nLiberian Students Union in Odisha`
     );
-    return { success: true };
+    return { success: true, message: "Verification code sent to your email." };
   } finally {
     lock.releaseLock();
   }
@@ -1174,15 +1301,59 @@ function verifyOTP(email, enteredOTP) {
         const storedOtp = String(values[i][2] || "").trim().toUpperCase();
         const expiresAt = new Date(values[i][3]);
         const verified = String(values[i][4] || "").trim().toUpperCase();
+        let attempts = Number(values[i][5] || 0);
         
-        if (verified === "YES") return { success: false, message: "Code has already been used. Please request a new code." };
-        if (new Date() > expiresAt) return { success: false, message: "Verification code has expired. Please request a new code." };
+        if (verified === "YES") {
+          return { success: false, message: "This verification code has already been used. Please request a new code." };
+        }
+        if (attempts >= CONFIG.MAX_ATTEMPTS) {
+          return { success: false, message: "Maximum attempts reached. This verification code has been invalidated. Please request a new code." };
+        }
+        if (new Date() > expiresAt) {
+          return { success: false, message: "Verification code has expired. Please request a new code." };
+        }
         
         if (storedOtp === enteredOTP) {
+          // Success: Mark code as verified
           sheet.getRange(i + 1, 5).setValue("Yes");
-          return { success: true };
+          
+          // Issue a cryptographically secure, temporary verification token
+          const verificationToken = "LSU_VT_" + Utilities.getUuid();
+          const tokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 60 minutes
+          const tokenRecord = JSON.stringify({
+            email: email,
+            createdAt: new Date().toISOString(),
+            expiresAt: tokenExpiry.toISOString(),
+            used: false
+          });
+          
+          // Store both in durable PropertiesService and high-speed CacheService
+          PropertiesService.getScriptProperties().setProperty("VERIF_TOKEN_" + verificationToken, tokenRecord);
+          CacheService.getScriptCache().put("VERIF_TOKEN_" + verificationToken, tokenRecord, 3600);
+          
+          return {
+            success: true,
+            verificationToken: verificationToken,
+            email: email,
+            message: "Email verified successfully."
+          };
         }
-        return { success: false, message: "Invalid verification code. Please check and try again." };
+        
+        // Failed attempt: increment counter and lock out if max attempts reached
+        attempts++;
+        sheet.getRange(i + 1, 6).setValue(attempts);
+        
+        if (attempts >= CONFIG.MAX_ATTEMPTS) {
+          return {
+            success: false,
+            message: `Maximum attempts reached (${attempts}/${CONFIG.MAX_ATTEMPTS}). This verification code is now invalidated. Please request a new code.`
+          };
+        }
+        
+        return {
+          success: false,
+          message: `Invalid verification code. Attempt ${attempts}/${CONFIG.MAX_ATTEMPTS}.`
+        };
       }
     }
     return { success: false, message: "No active verification code found for this email. Please request a new code." };
@@ -1195,21 +1366,50 @@ function submitApplication(payload) {
   const data = payload.data || {};
   const isStudent = String(data["Membership Type"] || "").toUpperCase().includes("STUDENT");
   
+  // 1. Validate Verification Token and Email Binding
+  const verificationToken = String(payload.verificationToken || payload.token || "").trim();
+  if (!verificationToken) {
+    throw new Error("Verification token is required. Please verify your email before submitting.");
+  }
+  
+  let tokenDataStr = CacheService.getScriptCache().get("VERIF_TOKEN_" + verificationToken);
+  if (!tokenDataStr) {
+    tokenDataStr = PropertiesService.getScriptProperties().getProperty("VERIF_TOKEN_" + verificationToken);
+  }
+  
+  if (!tokenDataStr) {
+    throw new Error("Your email verification session has expired or is invalid. Please verify your email again.");
+  }
+  
+  const tokenRecord = JSON.parse(tokenDataStr);
+  if (tokenRecord.used) {
+    throw new Error("This verification session has already been used to submit an application.");
+  }
+  
+  if (new Date() > new Date(tokenRecord.expiresAt)) {
+    throw new Error("Your verification session has expired. Please verify your email again.");
+  }
+  
+  const applicantEmail = extractEmail(data["Email"]);
+  if (!applicantEmail || applicantEmail !== extractEmail(tokenRecord.email)) {
+    throw new Error("The submitted application email does not match the verified email address.");
+  }
+  
   let totalBytes = 0;
   
-  // 1. Identification Photo (JPG/JPEG, max 5 MB)
+  // 2. Identification Photo (JPG/JPEG, max 5 MB)
   const idPhotoObj = payload.identificationPhoto || payload.passportPhoto;
   if (!idPhotoObj) throw new Error("Identification Photo is required.");
   const idPhotoValid = validateFileObject(idPhotoObj, "Identification Photo", "IMAGE");
   totalBytes += idPhotoValid.sizeBytes;
   
-  // 2. Passport Document (PDF, max 5 MB)
+  // 3. Passport Document (PDF, max 5 MB)
   const passDocObj = payload.passportDocument || payload.passportFile;
   if (!passDocObj) throw new Error("Passport Document is required.");
   const passDocValid = validateFileObject(passDocObj, "Passport Document", "PDF");
   totalBytes += passDocValid.sizeBytes;
   
-  // 3. EFRO File (PDF, max 5 MB, required for current students)
+  // 4. EFRO File (PDF, max 5 MB, required for current students)
   let efroDocObj = payload.efroFile || payload.efro;
   if (isStudent) {
     if (!efroDocObj) throw new Error("EFRO Document is required for Current Students.");
@@ -1217,14 +1417,13 @@ function submitApplication(payload) {
     totalBytes += efroDocValid.sizeBytes;
   }
   
-  // 4. Validate total upload set <= 15 MB
+  // 5. Validate total upload set <= 15 MB
   if (totalBytes > CONFIG.MAX_TOTAL_UPLOAD_BYTES) {
     throw new Error("Total document upload size exceeds the maximum limit of 15 MB.");
   }
   
   const uniqueId = "APP-" + new Date().getFullYear() + "-" + Utilities.getUuid().split("-")[0].toUpperCase();
   
-  // Drive file uploads
   const root = DriveApp.getFolderById(CONFIG.ROOT_DRIVE_FOLDER_ID);
   const yearF = getOrCreateFolder(root, new Date().getFullYear().toString());
   const catF = getOrCreateFolder(yearF, isStudent ? "Current Students" : "Alumni");
@@ -1287,13 +1486,17 @@ function submitApplication(payload) {
     headers.forEach((h, i) => {
       const hLower = String(h).trim().toLowerCase();
       if (hLower === "applicant email" || hLower === "email" || hLower === "email address" || hLower === "untitled question") {
-        row[i] = data["Email"] || "";
+        row[i] = applicantEmail;
       }
     });
 
     sheet.appendRow(row);
 
-    const applicantEmail = extractEmail(data["Email"]);
+    // Invalidate the verification token immediately to prevent reuse
+    PropertiesService.getScriptProperties().deleteProperty("VERIF_TOKEN_" + verificationToken);
+    CacheService.getScriptCache().remove("VERIF_TOKEN_" + verificationToken);
+    cleanupExpiredTokens_();
+
     if (applicantEmail) {
       const applicantName = ((data["First Name"] || "") + " " + (data["Last Name"] || "")).trim() || "Applicant";
       sendSecureEmail(
@@ -1310,111 +1513,8 @@ function submitApplication(payload) {
 }
 
 /*******************************************************
- * MAIN WEB APP ENDPOINT
+ * LSU DUES & PAYMENT PORTAL LOGIC
  *******************************************************/
-function doPost(e) {
-  try {
-    if (!e || !e.postData || !e.postData.contents) {
-      return jsonResponse({ success: false, message: "Empty request payload." });
-    }
-    
-    const payload = JSON.parse(e.postData.contents);
-    const action = String(payload.action || "").trim();
-
-    if (action === "sendOTP") return jsonResponse(sendOTP(payload.email));
-    if (action === "verifyOTP") return jsonResponse(verifyOTP(payload.email, payload.otp));
-    if (action === "submitApplication") return jsonResponse(submitApplication(payload));
-    
-    if (action === "checkAdministratorAccess") return jsonResponse(checkAdministratorAccess(payload.email));
-    if (action === "sendAdministratorOTP") return jsonResponse(sendAdministratorOTP(payload.email));
-    if (action === "verifyAdministratorOTP") return jsonResponse(verifyAdministratorOTP(payload.email, payload.otp));
-    if (action === "logoutAdministrator") return jsonResponse(logoutAdministrator(payload.sessionToken));
-    
-    // Administrator Dashboard Actions
-    if (action === "getDashboardData") return jsonResponse(getDashboardData(payload.sessionToken));
-    if (action === "updateApplicationStatus") return jsonResponse(updateApplicationStatus(payload));
-    if (action === "resendUploadLink" || action === "resendDocumentUpdateLink") return jsonResponse(resendUploadLink(payload));
-    if (action === "resendVerificationCode") return jsonResponse(resendVerificationCode(payload));
-    if (action === "getAdministrators") return jsonResponse(getAdministrators(payload.sessionToken));
-    if (action === "addAdministrator") return jsonResponse(addAdministrator(payload.sessionToken, payload.newEmail, payload.newName));
-    if (action === "deactivateAdministrator") return jsonResponse(deactivateAdministrator(payload.sessionToken, payload.targetEmail));
-    if (action === "reactivateAdministrator") return jsonResponse(reactivateAdministrator(payload.sessionToken, payload.targetEmail));
-    if (action === "processVerificationReplies") return jsonResponse(processVerificationReplies(payload));
-    
-    // Applicant Document Update Actions
-    if (action === "getDocumentUpdateInfo") return jsonResponse(getDocumentUpdateInfo(payload.token));
-    if (action === "submitDocumentUpdate") return jsonResponse(submitDocumentUpdate(payload));
-
-    // LSU DUES PAYMENT ROUTES
-    if (action === "sendDueOTP") return jsonResponse(sendDueOTP(payload.email));
-    if (action === "verifyDueOTP") return jsonResponse(verifyDueOTP(payload.email, payload.otp));
-    if (action === "getDuePaymentData") return jsonResponse(getDuePaymentData(payload.sessionToken, payload.targetEmail || payload.otherEmail || payload.email));
-    if (action === "submitDuePayment") return jsonResponse(submitDuePayment(payload));
-    if (action === "logoutDueMember") return jsonResponse(logoutDueMember(payload.sessionToken));
-    if (action === "sendPaymentAdminOTP") return jsonResponse(paymentAdminSendOTP(payload.email));
-    if (action === "verifyPaymentAdminOTP") return jsonResponse(paymentAdminVerifyOTP(payload.email, payload.otp));
-    if (action === "getPendingDuePayments") return jsonResponse(getPendingDuePayments(payload.sessionToken));
-    if (action === "approveDuePayment") return jsonResponse(approveDuePayment(payload));
-    if (action === "rejectDuePayment") return jsonResponse(rejectDuePayment(payload));
-    if (action === "logoutPaymentAdmin") return jsonResponse(logoutPaymentAdmin(payload.sessionToken));
-
-    return jsonResponse({ success: false, message: "Invalid action: " + action });
-  } catch (error) {
-    Logger.log("doPost error: " + error.toString());
-    return jsonResponse({ success: false, message: error.message || error.toString() });
-  }
-}
-
-function doGet() {
-  return jsonResponse({ success: true, message: "LSU System Online." });
-}
-
-
-/*******************************************************
- * LSU DUES & PAYMENT PORTAL
- * Add-on for the existing LSU membership backend.
- * No static dues amount is used.
- *******************************************************/
-
-const LSU_PAYMENT_CONFIG = {
-  PAYMENT_SHEET_NAME: "Payments",
-  ALLOCATION_SHEET_NAME: "PaymentAllocations",
-  MEMBER_OTP_PREFIX: "LSU_DUE_OTP_",
-  MEMBER_SESSION_PREFIX: "LSU_DUE_MEMBER_SESSION_",
-  PAYMENT_ADMIN_OTP_PREFIX: "LSU_PAYMENT_ADMIN_OTP_",
-  PAYMENT_ADMIN_SESSION_PREFIX: "LSU_PAYMENT_ADMIN_SESSION_",
-  OTP_EXPIRY_MINUTES: 5,
-  SESSION_TTL_SECONDS: 900,
-  MAX_OTP_ATTEMPTS: 3,
-  MAX_OTHER_MEMBERS: 2
-};
-
-function lsuPaymentSheet_(name, headers) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  let sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name);
-  if (sheet.getLastRow() === 0) {
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-  } else {
-    const current = sheet.getRange(1, 1, 1, headers.length).getDisplayValues()[0];
-    if (current.some((v, i) => String(v || "").trim() !== headers[i])) {
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    }
-  }
-  return sheet;
-}
-
-function ensurePaymentSheets() {
-  lsuPaymentSheet_("Payments", [
-    "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
-    "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
-    "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
-  ]);
-  lsuPaymentSheet_("PaymentAllocations", [
-    "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status"
-  ]);
-}
-
 function lsuFindMemberByEmail_(email) {
   email = extractEmail(email);
   if (!email) return null;
@@ -1424,25 +1524,28 @@ function lsuFindMemberByEmail_(email) {
   if (values.length < 2) return null;
 
   const headers = values[0].map(String);
-  const emailCol = findColumnIndex(headers, "Email");
-  const statusCol = findColumnIndex(headers, "Application Status", "Status");
-  const idCol = findColumnIndex(headers, "Membership ID");
-  const firstCol = findColumnIndex(headers, "First Name");
-  const middleCol = findColumnIndex(headers, "Middle Name");
-  const lastCol = findColumnIndex(headers, "Last Name");
+  const emailCol = findColumnIndex(headers, "Email", "Applicant Email", "Email Address", "Applicant's Email");
+  const statusCol = findColumnIndex(headers, "Application Status", "Status", "Application status");
+  const idCol = findColumnIndex(headers, "Membership ID", "Membership Id", "Member ID", "Membership Number");
+  const firstCol = findColumnIndex(headers, "First Name", "FirstName", "Applicant Name");
+  const middleCol = findColumnIndex(headers, "Middle Name", "MiddleName");
+  const lastCol = findColumnIndex(headers, "Last Name", "LastName");
 
-  for (let i = 1; i < values.length; i++) {
-    if (emailCol !== -1 && extractEmail(values[i][emailCol]) === email) {
-      const status = String(statusCol !== -1 ? values[i][statusCol] : "").trim().toUpperCase();
-      const membershipId = String(idCol !== -1 ? values[i][idCol] : "").trim();
-      const fullMember = ["MEMBER_CONFIRMED", "CONFIRMED"].includes(status) && !!membershipId;
+  let fallbackCandidate = null;
+  for (let i = values.length - 1; i >= 1; i--) {
+    const row = values[i];
+    const rowEmail = (emailCol !== -1 ? extractEmail(row[emailCol]) : "") || findEmailInRow(row, headers);
+    if (rowEmail === email) {
+      const status = String(statusCol !== -1 ? row[statusCol] : "").trim().toUpperCase();
+      const membershipId = String(idCol !== -1 ? row[idCol] : "").trim();
+      const fullMember = (status === "MEMBER_CONFIRMED" || status === "CONFIRMED") && !!membershipId;
       const name = [
-        firstCol !== -1 ? values[i][firstCol] : "",
-        middleCol !== -1 ? values[i][middleCol] : "",
-        lastCol !== -1 ? values[i][lastCol] : ""
+        firstCol !== -1 ? row[firstCol] : "",
+        middleCol !== -1 ? row[middleCol] : "",
+        lastCol !== -1 ? row[lastCol] : ""
       ].map(v => String(v || "").trim()).filter(Boolean).join(" ");
 
-      return {
+      const candidate = {
         row: i + 1,
         email,
         name: name || email,
@@ -1450,9 +1553,11 @@ function lsuFindMemberByEmail_(email) {
         status,
         fullMember
       };
+      if (fullMember) return candidate;
+      if (!fallbackCandidate) fallbackCandidate = candidate;
     }
   }
-  return null;
+  return fallbackCandidate;
 }
 
 function lsuDueOtpKey_(email) {
@@ -1465,11 +1570,11 @@ function lsuDueSessionKey_(token) {
 
 function sendDueOTP(email) {
   email = extractEmail(email);
-  if (!validateEmail(email)) return { success:false, message:"Please enter a valid registered email address." };
+  if (!validateEmail(email)) return { success: false, message: "Please enter a valid registered email address." };
 
   const member = lsuFindMemberByEmail_(email);
   if (!member || !member.fullMember) {
-    return { success:false, message:"This email address is not associated with a confirmed LSU member." };
+    return { success: false, message: "This email address is not associated with a confirmed LSU member." };
   }
 
   const otp = "DUE" + Math.floor(100 + Math.random() * 900);
@@ -1485,7 +1590,7 @@ function sendDueOTP(email) {
     `Dear ${member.name},\n\nYour LSU dues payment verification code is:\n\n${otp}\n\nThis code expires in ${LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES} minutes.\n\nRegards,\nLiberian Students Union in Odisha`
   );
 
-  return { success:true, message:"Verification code sent to your registered email address." };
+  return { success: true, message: "Verification code sent to your registered email address." };
 }
 
 function verifyDueOTP(email, enteredOTP) {
@@ -1493,28 +1598,28 @@ function verifyDueOTP(email, enteredOTP) {
   enteredOTP = String(enteredOTP || "").trim().toUpperCase();
 
   const member = lsuFindMemberByEmail_(email);
-  if (!member || !member.fullMember) return { success:false, message:"This email address is not associated with a confirmed LSU member." };
+  if (!member || !member.fullMember) return { success: false, message: "This email address is not associated with a confirmed LSU member." };
 
   const raw = CacheService.getScriptCache().get(lsuDueOtpKey_(email));
-  if (!raw) return { success:false, message:"Verification code expired or was not requested. Please request a new code." };
+  if (!raw) return { success: false, message: "Verification code expired or was not requested. Please request a new code." };
 
   const record = JSON.parse(raw);
-  if (new Date() > new Date(record.expiresAt)) return { success:false, message:"Verification code has expired. Please request a new code." };
-  if (record.attempts >= LSU_PAYMENT_CONFIG.MAX_OTP_ATTEMPTS) return { success:false, message:"Maximum attempts reached. Please request a new code." };
+  if (new Date() > new Date(record.expiresAt)) return { success: false, message: "Verification code has expired. Please request a new code." };
+  if (record.attempts >= LSU_PAYMENT_CONFIG.MAX_OTP_ATTEMPTS) return { success: false, message: "Maximum attempts reached. Please request a new code." };
 
   if (record.otp !== enteredOTP) {
     record.attempts++;
     CacheService.getScriptCache().put(lsuDueOtpKey_(email), JSON.stringify(record), LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES * 60);
-    return { success:false, message:`Incorrect code. Attempt ${record.attempts}/${LSU_PAYMENT_CONFIG.MAX_OTP_ATTEMPTS}.` };
+    return { success: false, message: `Incorrect code. Attempt ${record.attempts}/${LSU_PAYMENT_CONFIG.MAX_OTP_ATTEMPTS}.` };
   }
 
   const token = Utilities.getUuid();
   CacheService.getScriptCache().put(lsuDueSessionKey_(token), JSON.stringify({
-    email, name:member.name, membershipId:member.membershipId
+    email, name: member.name, membershipId: member.membershipId
   }), LSU_PAYMENT_CONFIG.SESSION_TTL_SECONDS);
   CacheService.getScriptCache().remove(lsuDueOtpKey_(email));
 
-  return { success:true, sessionToken:token, member:{email,name:member.name,membershipId:member.membershipId} };
+  return { success: true, sessionToken: token, member: { email, name: member.name, membershipId: member.membershipId } };
 }
 
 function lsuRequireDueSession_(token) {
@@ -1525,7 +1630,7 @@ function lsuRequireDueSession_(token) {
   const member = lsuFindMemberByEmail_(session.email);
   if (!member || !member.fullMember) throw new Error("Membership access is no longer available.");
   CacheService.getScriptCache().put(lsuDueSessionKey_(token), raw, LSU_PAYMENT_CONFIG.SESSION_TTL_SECONDS);
-  return {...session, member};
+  return { ...session, member };
 }
 
 function getDuePaymentData(sessionToken, targetEmail) {
@@ -1564,7 +1669,7 @@ function lsuPaymentMethod_(method) {
 
 function lsuPaymentId_() {
   const year = new Date().getFullYear();
-  const sheet = lsuPaymentSheet_("Payments", [
+  const sheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, [
     "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
     "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
     "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
@@ -1612,7 +1717,7 @@ function submitDuePayment(payload) {
     }
 
     const amount = lsuValidateAmount_(item.amount);
-    allocations.push({email:member.email,name:member.name,membershipId:member.membershipId,amount});
+    allocations.push({ email: member.email, name: member.name, membershipId: member.membershipId, amount });
     total += amount;
   }
 
@@ -1634,14 +1739,19 @@ function submitDuePayment(payload) {
   }
 
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
   try {
-    const paymentSheet = lsuPaymentSheet_("Payments", [
+    lock.waitLock(10000);
+  } catch (e) {
+    throw new Error("Payment system is busy processing another transaction. Please retry in a moment.");
+  }
+
+  try {
+    const paymentSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, [
       "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
       "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
       "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
     ]);
-    const allocationSheet = lsuPaymentSheet_("PaymentAllocations", [
+    const allocationSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME, [
       "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status"
     ]);
 
@@ -1657,17 +1767,17 @@ function submitDuePayment(payload) {
     ]);
 
     allocations.forEach(a => allocationSheet.appendRow([
-      paymentId,a.email,a.name,a.membershipId,a.amount,"PENDING VERIFICATION"
+      paymentId, a.email, a.name, a.membershipId, a.amount, "PENDING VERIFICATION"
     ]));
 
     return {
-      success:true,
+      success: true,
       paymentId,
-      status:"PENDING VERIFICATION",
-      payer:payer.name,
+      status: "PENDING VERIFICATION",
+      payer: payer.name,
       allocations,
       total,
-      message:"Payment submitted successfully. Your payment is pending administrator verification."
+      message: "Payment submitted successfully. Your payment is pending administrator verification."
     };
   } finally {
     lock.releaseLock();
@@ -1676,57 +1786,62 @@ function submitDuePayment(payload) {
 
 function logoutDueMember(sessionToken) {
   CacheService.getScriptCache().remove(lsuDueSessionKey_(sessionToken));
-  return {success:true};
+  return { success: true };
 }
 
-/* Payment-admin authentication reuses the EXISTING Administrators sheet and access rules. */
+/*******************************************************
+ * FINANCE PAYMENT ADMIN AUTH & ACTIONS
+ *******************************************************/
 function paymentAdminSendOTP(email) {
   email = extractEmail(email);
   const access = checkAdministratorAccess(email);
-  if (!access.authorized) return {success:false,message:"You are not authorized to access the payment administration portal."};
+  if (!access.authorized) return { success: false, message: "You are not authorized to access the payment administration portal." };
 
   const otp = "FIN" + Math.floor(100 + Math.random() * 900) + "LSU";
   CacheService.getScriptCache().put(
     LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_OTP_PREFIX + email,
-    JSON.stringify({otp,expiresAt:new Date(Date.now()+LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES*60000).toISOString(),attempts:0}),
-    LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES*60
+    JSON.stringify({ otp, expiresAt: new Date(Date.now() + LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES * 60000).toISOString(), attempts: 0 }),
+    LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES * 60
   );
 
-  sendSecureEmail(email,"LSU Finance Payment Administration Verification Code",
-    `Dear ${access.name || "Administrator"},\n\nYour payment administration verification code is:\n\n${otp}\n\nThis code expires in ${LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES} minutes.\n\nRegards,\nLiberian Students Union in Odisha`);
+  sendSecureEmail(
+    email,
+    "LSU Finance Payment Administration Verification Code",
+    `Dear ${access.name || "Administrator"},\n\nYour payment administration verification code is:\n\n${otp}\n\nThis code expires in ${LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES} minutes.\n\nRegards,\nLiberian Students Union in Odisha`
+  );
 
-  return {success:true,message:"Payment administration verification code sent."};
+  return { success: true, message: "Payment administration verification code sent." };
 }
 
 function paymentAdminVerifyOTP(email, enteredOTP) {
   email = extractEmail(email);
   enteredOTP = String(enteredOTP || "").trim().toUpperCase();
   const access = checkAdministratorAccess(email);
-  if (!access.authorized) return {success:false,message:"Unauthorized account."};
+  if (!access.authorized) return { success: false, message: "Unauthorized account." };
 
   const key = LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_OTP_PREFIX + email;
   const raw = CacheService.getScriptCache().get(key);
-  if (!raw) return {success:false,message:"Verification code expired or was not requested."};
+  if (!raw) return { success: false, message: "Verification code expired or was not requested." };
 
   const record = JSON.parse(raw);
-  if (new Date() > new Date(record.expiresAt)) return {success:false,message:"Verification code has expired."};
-  if (record.attempts >= LSU_PAYMENT_CONFIG.MAX_OTP_ATTEMPTS) return {success:false,message:"Maximum attempts reached."};
+  if (new Date() > new Date(record.expiresAt)) return { success: false, message: "Verification code has expired." };
+  if (record.attempts >= LSU_PAYMENT_CONFIG.MAX_OTP_ATTEMPTS) return { success: false, message: "Maximum attempts reached." };
 
   if (record.otp !== enteredOTP) {
     record.attempts++;
-    CacheService.getScriptCache().put(key,JSON.stringify(record),LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES*60);
-    return {success:false,message:`Incorrect code. Attempt ${record.attempts}/${LSU_PAYMENT_CONFIG.MAX_OTP_ATTEMPTS}.`};
+    CacheService.getScriptCache().put(key, JSON.stringify(record), LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES * 60);
+    return { success: false, message: `Incorrect code. Attempt ${record.attempts}/${LSU_PAYMENT_CONFIG.MAX_OTP_ATTEMPTS}.` };
   }
 
   const token = Utilities.getUuid();
   CacheService.getScriptCache().put(
     LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + token,
-    JSON.stringify({email,role:access.role,name:access.name}),
+    JSON.stringify({ email, role: access.role, name: access.name }),
     LSU_PAYMENT_CONFIG.SESSION_TTL_SECONDS
   );
   CacheService.getScriptCache().remove(key);
 
-  return {success:true,sessionToken:token,email,role:access.role,name:access.name};
+  return { success: true, sessionToken: token, email, role: access.role, name: access.name };
 }
 
 function lsuRequirePaymentAdmin_(token) {
@@ -1739,7 +1854,7 @@ function lsuRequirePaymentAdmin_(token) {
   const access = checkAdministratorAccess(session.email);
   if (!access.authorized || access.role !== session.role) throw new Error("Administrator access revoked.");
 
-  CacheService.getScriptCache().put(key,raw,LSU_PAYMENT_CONFIG.SESSION_TTL_SECONDS);
+  CacheService.getScriptCache().put(key, raw, LSU_PAYMENT_CONFIG.SESSION_TTL_SECONDS);
   return session;
 }
 
@@ -1747,71 +1862,80 @@ function getPendingDuePayments(sessionToken) {
   lsuRequirePaymentAdmin_(sessionToken);
   ensurePaymentSheets();
 
-  const ps = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Payments");
-  const as = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("PaymentAllocations");
+  const ps = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME);
+  const as = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
   const pv = ps.getDataRange().getValues();
   const av = as.getDataRange().getValues();
   const payments = [];
   const allocations = {};
 
-  for (let i=1;i<av.length;i++) {
+  for (let i = 1; i < av.length; i++) {
     const p = String(av[i][0] || "");
     if (!allocations[p]) allocations[p] = [];
     allocations[p].push({
-      email:String(av[i][1]||""),
-      name:String(av[i][2]||""),
-      membershipId:String(av[i][3]||""),
-      amount:Number(av[i][4]||0),
-      status:String(av[i][5]||"")
+      email: String(av[i][1] || ""),
+      name: String(av[i][2] || ""),
+      membershipId: String(av[i][3] || ""),
+      amount: Number(av[i][4] || 0),
+      status: String(av[i][5] || "")
     });
   }
 
-  for (let i=1;i<pv.length;i++) {
+  for (let i = 1; i < pv.length; i++) {
     const status = String(pv[i][9] || "");
     if (status === "PENDING VERIFICATION") {
+      let subDate = pv[i][10];
+      if (subDate instanceof Date) {
+        subDate = formatExactDateTime(subDate);
+      } else {
+        subDate = String(subDate || "");
+      }
+
       payments.push({
-        paymentId:String(pv[i][0]||""),
-        payer:String(pv[i][1]||""),
-        payerEmail:String(pv[i][2]||""),
-        paymentMethod:String(pv[i][3]||""),
-        totalAmount:Number(pv[i][4]||0),
-        paymentDate:String(pv[i][5]||""),
-        upiRefNo:String(pv[i][6]||""),
-        cashReceiverName:String(pv[i][7]||""),
-        cashReceiverPosition:String(pv[i][8]||""),
+        paymentId: String(pv[i][0] || ""),
+        payer: String(pv[i][1] || ""),
+        payerEmail: String(pv[i][2] || ""),
+        paymentMethod: String(pv[i][3] || ""),
+        totalAmount: Number(pv[i][4] || 0),
+        paymentDate: String(pv[i][5] || ""),
+        upiRefNo: String(pv[i][6] || ""),
+        cashReceiverName: String(pv[i][7] || ""),
+        cashReceiverPosition: String(pv[i][8] || ""),
         status,
-        submittedDate:String(pv[i][10]||""),
-        allocations:allocations[String(pv[i][0]||"")] || []
+        submittedDate: subDate,
+        allocations: allocations[String(pv[i][0] || "")] || []
       });
     }
   }
-  return {success:true,payments};
+  return { success: true, payments };
 }
 
 function lsuPaymentRow_(paymentId) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Payments");
+  ensurePaymentSheets();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME);
   const values = sheet.getDataRange().getValues();
-  for (let i=1;i<values.length;i++) {
-    if (String(values[i][0]||"") === paymentId) return {sheet,row:i+1,data:values[i]};
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0] || "") === paymentId) return { sheet, row: i + 1, data: values[i] };
   }
   throw new Error("Payment not found.");
 }
 
 function lsuAllocationRows_(paymentId) {
-  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("PaymentAllocations");
+  ensurePaymentSheets();
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
   const values = sheet.getDataRange().getValues();
-  const rows=[];
-  for (let i=1;i<values.length;i++) {
-    if (String(values[i][0]||"") === paymentId) rows.push({row:i+1,data:values[i]});
+  const rows = [];
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][0] || "") === paymentId) rows.push({ row: i + 1, data: values[i] });
   }
-  return {sheet,rows};
+  return { sheet, rows };
 }
 
 function lsuReceiptId_(paymentId) {
-  return "LSU-REC-" + paymentId.replace(/^PAY-/,"");
+  return "LSU-REC-" + paymentId.replace(/^PAY-/, "");
 }
 
-function lsuPaymentReceiptText_(payment,paymentAllocations,recipientMember) {
+function lsuPaymentReceiptText_(payment, paymentAllocations, recipientMember) {
   const allocationText = paymentAllocations.map(a =>
     `- ${a.name} (${a.email}) — ₹${Number(a.amount).toFixed(2)}`
   ).join("\n");
@@ -1851,7 +1975,12 @@ function approveDuePayment(payload) {
   if (!paymentId) throw new Error("Payment ID is required.");
 
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    throw new Error("Payment system is busy. Please retry in a moment.");
+  }
+
   try {
     ensurePaymentSheets();
     const payment = lsuPaymentRow_(paymentId);
@@ -1859,49 +1988,56 @@ function approveDuePayment(payload) {
 
     if (String(payment.data[9]) !== "PENDING VERIFICATION") throw new Error("This payment has already been processed.");
 
-    const expectedTotal = allocations.rows.reduce((sum,r) => sum + Number(r.data[4]||0), 0);
-    const storedTotal = Number(payment.data[4]||0);
+    const expectedTotal = allocations.rows.reduce((sum, r) => sum + Number(r.data[4] || 0), 0);
+    const storedTotal = Number(payment.data[4] || 0);
     if (Math.abs(expectedTotal - storedTotal) > 0.001) throw new Error("Payment total does not match its allocation amounts.");
 
     const receiptId = lsuReceiptId_(paymentId);
     const approvedDate = new Date();
 
-    payment.sheet.getRange(payment.row,10,1,6).setValues([[
-      "PAID / VERIFIED", payment.data[10], approvedDate, session.email, receiptId, ""
+    payment.sheet.getRange(payment.row, 10).setValue("PAID / VERIFIED");
+    payment.sheet.getRange(payment.row, 12, 1, 4).setValues([[
+      approvedDate, session.email, receiptId, ""
     ]]);
 
     allocations.rows.forEach(r => {
-      allocations.sheet.getRange(r.row,6).setValue("PAID / VERIFIED");
+      allocations.sheet.getRange(r.row, 6).setValue("PAID / VERIFIED");
     });
 
     const receiptPayment = {
-      payer:String(payment.data[1]||""),
-      payerEmail:String(payment.data[2]||""),
-      paymentMethod:String(payment.data[3]||""),
-      totalAmount:storedTotal,
-      paymentDate:String(payment.data[5]||""),
-      upiRefNo:String(payment.data[6]||""),
-      cashReceiverName:String(payment.data[7]||""),
-      cashReceiverPosition:String(payment.data[8]||""),
+      payer: String(payment.data[1] || ""),
+      payerEmail: String(payment.data[2] || ""),
+      paymentMethod: String(payment.data[3] || ""),
+      totalAmount: storedTotal,
+      paymentDate: String(payment.data[5] || ""),
+      upiRefNo: String(payment.data[6] || ""),
+      cashReceiverName: String(payment.data[7] || ""),
+      cashReceiverPosition: String(payment.data[8] || ""),
       receiptId,
-      approvedDate:formatExactDateTime(approvedDate)
+      approvedDate: formatExactDateTime(approvedDate)
     };
     const receiptAllocations = allocations.rows.map(r => ({
-      email:String(r.data[1]||""),name:String(r.data[2]||""),
-      membershipId:String(r.data[3]||""),amount:Number(r.data[4]||0)
+      email: String(r.data[1] || ""), name: String(r.data[2] || ""),
+      membershipId: String(r.data[3] || ""), amount: Number(r.data[4] || 0)
     }));
 
-    sendSecureEmail(receiptPayment.payerEmail,"LSU Dues Payment Receipt - " + receiptId,
-      lsuPaymentReceiptText_(receiptPayment,receiptAllocations,null));
+    sendSecureEmail(
+      receiptPayment.payerEmail,
+      "LSU Dues Payment Receipt - " + receiptId,
+      lsuPaymentReceiptText_(receiptPayment, receiptAllocations, null)
+    );
 
     receiptAllocations.forEach(member => {
-      if (member.email !== receiptPayment.payerEmail) {
-        sendSecureEmail(member.email,"LSU Dues Paid on Your Behalf - " + receiptId,
-          lsuPaymentReceiptText_(receiptPayment,receiptAllocations,member));
+      if (extractEmail(member.email) !== extractEmail(receiptPayment.payerEmail)) {
+        sendSecureEmail(
+          member.email,
+          "LSU Dues Paid on Your Behalf - " + receiptId,
+          lsuPaymentReceiptText_(receiptPayment, receiptAllocations, member)
+        );
       }
     });
 
-    return {success:true,message:"Payment approved and receipts sent.",paymentId,receiptId,status:"PAID / VERIFIED"};
+    return { success: true, message: "Payment approved and receipts sent.", paymentId, receiptId, status: "PAID / VERIFIED" };
   } finally {
     lock.releaseLock();
   }
@@ -1915,32 +2051,104 @@ function rejectDuePayment(payload) {
   if (!reason) throw new Error("Rejection reason is required.");
 
   const lock = LockService.getScriptLock();
-  lock.waitLock(10000);
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    throw new Error("Payment system is busy. Please retry in a moment.");
+  }
+
   try {
     ensurePaymentSheets();
     const payment = lsuPaymentRow_(paymentId);
     const allocations = lsuAllocationRows_(paymentId);
     if (String(payment.data[9]) !== "PENDING VERIFICATION") throw new Error("This payment has already been processed.");
 
-    payment.sheet.getRange(payment.row,10,1,6).setValues([[
-      "REJECTED", payment.data[10], "", session.email, "", reason
+    payment.sheet.getRange(payment.row, 10).setValue("REJECTED");
+    payment.sheet.getRange(payment.row, 12, 1, 4).setValues([[
+      "", session.email, "", reason
     ]]);
-    allocations.rows.forEach(r => allocations.sheet.getRange(r.row,6).setValue("REJECTED"));
+    allocations.rows.forEach(r => allocations.sheet.getRange(r.row, 6).setValue("REJECTED"));
 
     sendSecureEmail(
-      String(payment.data[2]||""),
+      String(payment.data[2] || ""),
       "LSU Dues Payment Rejected - " + paymentId,
       `Your LSU dues payment (${paymentId}) was rejected.\n\nReason:\n${reason}\n\nPlease contact the Liberian Students Union in Odisha if you need assistance.`
     );
 
-    return {success:true,message:"Payment rejected.",paymentId,status:"REJECTED"};
+    return { success: true, message: "Payment rejected.", paymentId, status: "REJECTED" };
   } finally {
     lock.releaseLock();
   }
 }
 
 function logoutPaymentAdmin(sessionToken) {
-  CacheService.getScriptCache().remove(LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + String(sessionToken||"").trim());
-  return {success:true};
+  CacheService.getScriptCache().remove(LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + String(sessionToken || "").trim());
+  return { success: true };
 }
 
+/*******************************************************
+ * MAIN WEB APP ENDPOINT
+ *******************************************************/
+function doPost(e) {
+  try {
+    if (!e || !e.postData || !e.postData.contents) {
+      return jsonResponse({ success: false, message: "Empty request payload." });
+    }
+    
+    const payload = JSON.parse(e.postData.contents);
+    const action = String(payload.action || "").trim();
+
+    // Membership Registration Routes
+    if (action === "sendOTP") return jsonResponse(sendOTP(payload.email, payload.turnstileToken));
+    if (action === "verifyOTP") return jsonResponse(verifyOTP(payload.email, payload.otp));
+    if (action === "submitApplication") return jsonResponse(submitApplication(payload));
+    
+    // Administrator Authentication Routes
+    if (action === "checkAdministratorAccess") return jsonResponse(checkAdministratorAccess(payload.email));
+    if (action === "sendAdministratorOTP") return jsonResponse(sendAdministratorOTP(payload.email));
+    if (action === "verifyAdministratorOTP") return jsonResponse(verifyAdministratorOTP(payload.email, payload.otp));
+    if (action === "logoutAdministrator") return jsonResponse(logoutAdministrator(payload.sessionToken));
+    
+    // Administrator Dashboard Actions
+    if (action === "getDashboardData") return jsonResponse(getDashboardData(payload.sessionToken));
+    if (action === "updateApplicationStatus") return jsonResponse(updateApplicationStatus(payload));
+    if (action === "resendUploadLink" || action === "resendDocumentUpdateLink") return jsonResponse(resendUploadLink(payload));
+    if (action === "resendVerificationCode") return jsonResponse(resendVerificationCode(payload));
+    if (action === "getAdministrators") return jsonResponse(getAdministrators(payload.sessionToken));
+    if (action === "addAdministrator") return jsonResponse(addAdministrator(payload.sessionToken, payload.newEmail, payload.newName));
+    if (action === "deactivateAdministrator") return jsonResponse(deactivateAdministrator(payload.sessionToken, payload.targetEmail));
+    if (action === "reactivateAdministrator") return jsonResponse(reactivateAdministrator(payload.sessionToken, payload.targetEmail));
+    if (action === "processVerificationReplies") return jsonResponse(processVerificationReplies(payload));
+    if (action === "cleanupExpiredTokens") {
+      requireAdministratorSession(payload.sessionToken);
+      cleanupExpiredTokens_();
+      return jsonResponse({ success: true, message: "Expired tokens cleaned up successfully." });
+    }
+    
+    // Applicant Document Update Actions
+    if (action === "getDocumentUpdateInfo") return jsonResponse(getDocumentUpdateInfo(payload.token));
+    if (action === "submitDocumentUpdate") return jsonResponse(submitDocumentUpdate(payload));
+
+    // LSU DUES PAYMENT ROUTES
+    if (action === "sendDueOTP") return jsonResponse(sendDueOTP(payload.email));
+    if (action === "verifyDueOTP") return jsonResponse(verifyDueOTP(payload.email, payload.otp));
+    if (action === "getDuePaymentData") return jsonResponse(getDuePaymentData(payload.sessionToken, payload.targetEmail || payload.otherEmail || payload.email));
+    if (action === "submitDuePayment") return jsonResponse(submitDuePayment(payload));
+    if (action === "logoutDueMember") return jsonResponse(logoutDueMember(payload.sessionToken));
+    if (action === "sendPaymentAdminOTP") return jsonResponse(paymentAdminSendOTP(payload.email));
+    if (action === "verifyPaymentAdminOTP") return jsonResponse(paymentAdminVerifyOTP(payload.email, payload.otp));
+    if (action === "getPendingDuePayments") return jsonResponse(getPendingDuePayments(payload.sessionToken));
+    if (action === "approveDuePayment") return jsonResponse(approveDuePayment(payload));
+    if (action === "rejectDuePayment") return jsonResponse(rejectDuePayment(payload));
+    if (action === "logoutPaymentAdmin") return jsonResponse(logoutPaymentAdmin(payload.sessionToken));
+
+    return jsonResponse({ success: false, message: "Invalid action: " + action });
+  } catch (error) {
+    Logger.log("doPost error: " + error.toString());
+    return jsonResponse({ success: false, message: error.message || error.toString() });
+  }
+}
+
+function doGet() {
+  return jsonResponse({ success: true, message: "LSU Unified System Online." });
+}
