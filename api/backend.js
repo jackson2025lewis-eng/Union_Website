@@ -1,107 +1,76 @@
-/**
- * Vercel Serverless Function Proxy for LSU Odisha Backend
- * Proxies frontend requests to Google Apps Script Web App (backed by Google Sheets & Google Drive)
- */
-
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec';
+const APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec";
 
 module.exports = async function handler(req, res) {
-  // CORS configuration
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version, Authorization'
-  );
-
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end();
-  }
-
-  // Validate HTTP method
-  if (req.method !== 'POST') {
+  // Allow only POST requests from the frontend.
+  if (req.method !== "POST") {
+    res.setHeader("Allow", "POST");
     return res.status(405).json({
       success: false,
-      message: `Method ${req.method} not allowed. Only POST requests are supported.`
+      message: "Method not allowed. Use POST."
     });
   }
 
-  // Parse payload robustly
-  let payload = req.body;
-
-  if (typeof payload === 'string') {
-    try {
-      payload = JSON.parse(payload);
-    } catch (parseErr) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid JSON request payload.'
-      });
-    }
-  } else if (Buffer.isBuffer(payload)) {
-    try {
-      payload = JSON.parse(payload.toString('utf-8'));
-    } catch (parseErr) {
-      return res.status(400).json({
-        success: false,
-        message: 'Invalid JSON request payload buffer.'
-      });
-    }
-  } else if (!payload && req.readable) {
-    try {
-      const chunks = [];
-      for await (const chunk of req) {
-        chunks.push(chunk);
-      }
-      const rawText = Buffer.concat(chunks).toString('utf-8');
-      payload = rawText ? JSON.parse(rawText) : {};
-    } catch (streamErr) {
-      return res.status(400).json({
-        success: false,
-        message: 'Failed to read JSON request stream.'
-      });
-    }
-  }
-
-  if (!payload || typeof payload !== 'object') {
-    payload = {};
-  }
-
-  // Forward request to Google Apps Script
   try {
+    let payload = req.body;
+
+    // Handle requests where the body arrives as a JSON string.
+    if (typeof payload === "string") {
+      payload = JSON.parse(payload);
+    }
+
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid request payload."
+      });
+    }
+
+    if (!payload.action) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing action in request payload."
+      });
+    }
+
+    // Forward the request to the latest Apps Script deployment.
     const upstreamResponse = await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json'
+        "Content-Type": "application/json"
       },
       body: JSON.stringify(payload),
-      redirect: 'follow'
+      redirect: "follow"
     });
 
     const responseText = await upstreamResponse.text();
-    let data;
+
+    let result;
 
     try {
-      data = JSON.parse(responseText);
-    } catch (jsonErr) {
-      console.error('Non-JSON response from Google Apps Script:', responseText);
+      result = JSON.parse(responseText);
+    } catch (parseError) {
+      console.error(
+        "Apps Script returned a non-JSON response. HTTP status:",
+        upstreamResponse.status
+      );
+
       return res.status(502).json({
         success: false,
-        message: 'The upstream Google Apps Script backend returned an invalid non-JSON response.',
-        details: responseText.slice(0, 300)
+        message:
+          "The Apps Script backend returned an unexpected response. Check the Apps Script deployment and execution logs."
       });
     }
 
-    return res.status(200).json(data);
+    // Preserve the Apps Script result for the frontend.
+    return res.status(200).json(result);
+
   } catch (error) {
-    console.error('Error forwarding request to Google Apps Script:', error);
+    console.error("LSU backend proxy error:", error.message);
+
     return res.status(502).json({
       success: false,
-      message: 'Unable to connect to the backend server. Please try again later.'
+      message: "Unable to communicate with the LSU backend. Please try again."
     });
   }
 };
-
-module.exports.default = module.exports;
