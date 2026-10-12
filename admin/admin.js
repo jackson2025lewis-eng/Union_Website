@@ -1,5 +1,5 @@
 const BACKEND_URL = '/api/backend';
-const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx65PRCECX0_xq-N9cpygnhG24rC0cYfW7V5PCYNMjEDmDSg9zuv3Mfy75QYeEtoLbfGw/exec';
+const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec';
 
 // State
 let currentSessionToken = sessionStorage.getItem('adminSessionToken') || null;
@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
         loginView.classList.add('active');
     }
-    
+
     setupEventListeners();
 });
 
@@ -89,7 +89,7 @@ function setupEventListeners() {
         if (currentSessionToken) {
             try {
                 await sendBackendRequest({ action: 'logoutAdministrator', sessionToken: currentSessionToken });
-            } catch (err) {}
+            } catch (err) { }
         }
         sessionStorage.clear();
         window.location.href = '../index.html';
@@ -101,7 +101,7 @@ function setupEventListeners() {
             e.preventDefault();
             document.querySelectorAll('.admin-nav-link').forEach(l => l.classList.remove('active'));
             document.querySelectorAll('.dashboard-panel').forEach(p => p.classList.remove('active'));
-            
+
             e.currentTarget.classList.add('active');
             document.getElementById(e.currentTarget.dataset.target).classList.add('active');
 
@@ -140,13 +140,13 @@ function setupEventListeners() {
             e.target.closest('.admin-modal-overlay').classList.remove('active');
         });
     });
-    
+
     // Add Admin Modal
     document.getElementById('btn-add-admin-modal').addEventListener('click', () => {
         document.getElementById('modal-add-admin').classList.add('active');
     });
     document.getElementById('btn-submit-add-admin').addEventListener('click', handleAddAdmin);
-    
+
     // Update Request Modal
     document.getElementById('btn-submit-update-request').addEventListener('click', handleSubmitUpdateRequest);
 
@@ -157,7 +157,7 @@ function setupEventListeners() {
     document.getElementById('btn-sync-emails').addEventListener('click', handleSyncEmails);
 
     // Stats Mode
-    if(document.getElementById('stats-display-mode')) {
+    if (document.getElementById('stats-display-mode')) {
         document.getElementById('stats-display-mode').addEventListener('change', () => renderStats());
     }
 }
@@ -232,7 +232,7 @@ async function handleCheckAccess() {
         // Direct single-request OTP dispatch: checks admin authorization and sends OTP code in 1 step
         const otpRes = await sendBackendRequest({ action: 'sendAdministratorOTP', email });
         loginLoading.style.display = 'none';
-        
+
         if (otpRes.success) {
             otpStep.style.display = 'block';
             const otpInput = document.getElementById('admin-otp');
@@ -255,7 +255,7 @@ async function handleVerifyOTP() {
     const email = document.getElementById('admin-email').value.trim();
     const otp = document.getElementById('admin-otp').value.trim();
     const errorEl = document.getElementById('otp-error');
-    
+
     if (!otp) {
         errorEl.textContent = 'Please enter the verification code.';
         return;
@@ -267,19 +267,19 @@ async function handleVerifyOTP() {
 
     try {
         const res = await sendBackendRequest({ action: 'verifyAdministratorOTP', email, otp });
-        
+
         if (res.success) {
             // Success! Store session
             sessionStorage.setItem('adminSessionToken', res.sessionToken);
             sessionStorage.setItem('adminEmail', email);
             sessionStorage.setItem('adminRole', res.role);
             sessionStorage.setItem('adminName', res.name);
-            
+
             currentSessionToken = res.sessionToken;
             currentAdminEmail = email;
             currentAdminRole = res.role;
             currentAdminName = res.name;
-            
+
             showDashboard();
         } else {
             loginLoading.style.display = 'none';
@@ -300,16 +300,16 @@ async function handleVerifyOTP() {
 function showDashboard() {
     loginView.classList.remove('active');
     dashboardView.classList.add('active');
-    
+
     // Update Role Illustration Badge in upper RH corner
     const roleBadgeText = document.getElementById('current-admin-role-display');
     const badgeContainer = document.getElementById('admin-role-badge');
     const isChief = (currentAdminRole === 'CHIEF_ADMINISTRATOR' || currentAdminRole === 'CHIEF_ADMIN');
-    
+
     if (roleBadgeText) {
         roleBadgeText.textContent = isChief ? 'Chief Administrator' : 'Co-Administrator';
     }
-    
+
     if (badgeContainer) {
         badgeContainer.className = 'admin-role-badge-wrapper ' + (isChief ? 'chief-badge' : 'coadmin-badge');
         const badgeIcon = badgeContainer.querySelector('i');
@@ -329,13 +329,13 @@ function showDashboard() {
 
 async function loadDashboardData() {
     document.getElementById('apps-tbody').innerHTML = '<tr><td colspan="6" style="text-align: center;">Loading applications...</td></tr>';
-    
+
     try {
-        const res = await sendBackendRequest({ 
-            action: 'getDashboardData', 
-            sessionToken: currentSessionToken 
+        const res = await sendBackendRequest({
+            action: 'getDashboardData',
+            sessionToken: currentSessionToken
         });
-        
+
         if (res.success) {
             cachedApplications = (res.applications || []).map(row => {
                 // Map the spreadsheet headers to frontend expected properties
@@ -364,7 +364,7 @@ async function loadDashboardData() {
             });
             renderStats(res.statistics);
             renderApplications();
-            
+
             if (currentAdminRole === 'CHIEF_ADMINISTRATOR' || currentAdminRole === 'CHIEF_ADMIN') {
                 loadAdministrators();
             }
@@ -390,9 +390,9 @@ function renderStats(stats) {
     if (stats) lastStatsData = stats;
     else if (lastStatsData) stats = lastStatsData;
     else return;
-    
+
     const mode = document.getElementById('stats-display-mode') ? document.getElementById('stats-display-mode').value : 'NUMBER';
-    
+
     const container = document.getElementById('stats-container');
     if (!container) return;
 
@@ -646,21 +646,21 @@ function renderApplications() {
     const tbody = document.getElementById('apps-tbody');
     const searchTerm = document.getElementById('search-apps').value.toLowerCase();
     const statusFilter = document.getElementById('filter-status').value;
-    
+
     tbody.innerHTML = '';
-    
+
     const filtered = cachedApplications.filter(app => {
-        const matchesSearch = (app.name || '').toLowerCase().includes(searchTerm) || 
-                              (app.email || '').toLowerCase().includes(searchTerm) ||
-                              (app.id || '').toLowerCase().includes(searchTerm);
-        
+        const matchesSearch = (app.name || '').toLowerCase().includes(searchTerm) ||
+            (app.email || '').toLowerCase().includes(searchTerm) ||
+            (app.id || '').toLowerCase().includes(searchTerm);
+
         let matchesStatus = true;
         if (statusFilter !== 'ALL') {
             const normalizedAppStatus = (app.status || '').toUpperCase().replace(' ', '_');
             const normalizedFilter = statusFilter.toUpperCase().replace(' ', '_');
             matchesStatus = normalizedAppStatus === normalizedFilter;
         }
-        
+
         return matchesSearch && matchesStatus;
     });
 
@@ -693,7 +693,7 @@ function openAppDetail(appId) {
     const app = cachedApplications.find(a => a.id === appId);
     if (!app) return;
     currentAppInModal = app;
-    
+
     let contentHtml = `
         <div class="detail-grid">
             <div class="detail-item"><div class="detail-label">Application ID</div><div class="detail-value">${app.id}</div></div>
@@ -720,7 +720,7 @@ function openAppDetail(appId) {
         <h4>Documents</h4>
         <div>
     `;
-    
+
     if (app.passportDocUrl) {
         contentHtml += `<a href="${app.passportDocUrl}" target="_blank" class="document-link"><i class="fa-solid fa-file-pdf"></i> Passport Document</a>`;
     }
@@ -731,17 +731,17 @@ function openAppDetail(appId) {
         contentHtml += `<a href="${app.efroUrl}" target="_blank" class="document-link"><i class="fa-solid fa-file-pdf"></i> EFRO File</a>`;
     }
     contentHtml += `</div>`;
-    
+
     document.getElementById('app-detail-content').innerHTML = contentHtml;
-    
+
     // Actions based on role and status
     let actionsHtml = `<button class="secondary-btn close-modal-btn">Close</button>`;
-    
+
     const isOwnApp = (app.email.toLowerCase() === currentAdminEmail.toLowerCase());
-    
+
     if (!isOwnApp || currentAdminRole === 'CHIEF_ADMINISTRATOR') {
         const s = (app.status || '').toUpperCase();
-        
+
         if (s === 'UNDER_REVIEW') {
             actionsHtml = `
                 <button class="secondary-btn" onclick="openUpdateRequestModal()">Request Document Update</button>
@@ -763,9 +763,9 @@ function openAppDetail(appId) {
     } else {
         actionsHtml = `<span style="color: var(--text-light); margin-right: 15px;">You cannot approve your own application.</span>` + actionsHtml;
     }
-    
+
     document.getElementById('app-detail-actions').innerHTML = actionsHtml;
-    
+
     document.querySelectorAll('#app-detail-actions .close-modal-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.getElementById('modal-app-detail').classList.remove('active');
@@ -777,14 +777,14 @@ function openAppDetail(appId) {
 
 async function updateAppStatus(newStatus, reason = '', docType = '') {
     if (!confirm(`Are you sure you want to change status to ${newStatus}?`)) return;
-    
+
     document.getElementById('modal-app-detail').classList.remove('active');
     document.getElementById('modal-request-update').classList.remove('active');
     document.getElementById('modal-reject-reason').classList.remove('active');
-    
+
     const applicantEmail = currentAppInModal ? (currentAppInModal.email || currentAppInModal['Applicant Email'] || currentAppInModal['Email'] || currentAppInModal['Email Address'] || currentAppInModal['Untitled Question'] || '') : '';
     const applicantName = currentAppInModal ? (currentAppInModal.name || ((currentAppInModal['First Name'] || '') + ' ' + (currentAppInModal['Last Name'] || '')).trim() || 'Applicant') : 'Applicant';
-    
+
     try {
         const res = await sendBackendRequest({
             action: 'updateApplicationStatus',
@@ -796,7 +796,7 @@ async function updateAppStatus(newStatus, reason = '', docType = '') {
             applicantEmail: applicantEmail,
             applicantName: applicantName
         });
-        
+
         if (res.success) {
             alert('Application updated successfully and email notification sent.');
             loadDashboardData();
@@ -864,13 +864,13 @@ function handleSubmitReject() {
 function openUpdateRequestModal() {
     document.getElementById('modal-app-detail').classList.remove('active');
     document.getElementById('update-doc-reason').value = '';
-    
+
     const select = document.getElementById('update-doc-type');
     if (currentAppInModal.type === 'ALUMNI') {
         Array.from(select.options).forEach(opt => {
             if (opt.value === 'EFRO File') opt.style.display = 'none';
         });
-        if(select.value === 'EFRO File') select.value = 'Passport Document';
+        if (select.value === 'EFRO File') select.value = 'Passport Document';
     } else {
         Array.from(select.options).forEach(opt => opt.style.display = '');
     }
@@ -921,7 +921,7 @@ async function loadAdministrators() {
             action: 'getAdministrators',
             sessionToken: currentSessionToken
         });
-        
+
         if (res.success) {
             cachedAdministrators = res.administrators || [];
             renderAdministrators();
@@ -934,9 +934,9 @@ async function loadAdministrators() {
 function renderAdministrators() {
     const tbody = document.getElementById('admins-tbody');
     tbody.innerHTML = '';
-    
+
     let activeCoAdmins = 0;
-    
+
     if (cachedAdministrators.length === 0) {
         tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No administrators found.</td></tr>';
         return;
@@ -945,11 +945,11 @@ function renderAdministrators() {
     cachedAdministrators.forEach(admin => {
         const tr = document.createElement('tr');
         const isActive = admin.status === 'ACTIVE';
-        
+
         if (admin.role === 'CO_ADMINISTRATOR' && isActive) {
             activeCoAdmins++;
         }
-        
+
         let actionBtn = '';
         if (admin.role !== 'CHIEF_ADMINISTRATOR') {
             if (isActive) {
@@ -969,7 +969,7 @@ function renderAdministrators() {
         `;
         tbody.appendChild(tr);
     });
-    
+
     // Add counter below table
     const tableContainer = tbody.parentElement.parentElement;
     let counterInfo = document.getElementById('co-admin-counter');
@@ -980,10 +980,10 @@ function renderAdministrators() {
         counterInfo.style.fontSize = '16px';
         tableContainer.appendChild(counterInfo);
     }
-    
+
     const countColor = activeCoAdmins >= 3 ? 'var(--error)' : 'var(--primary)';
     counterInfo.innerHTML = `<strong>Active Co-Administrators: <span style="color: ${countColor};">${activeCoAdmins} / 3</span></strong>`;
-    
+
     const addBtn = document.getElementById('btn-add-admin-modal');
     if (activeCoAdmins >= 3) {
         addBtn.disabled = true;
@@ -1000,15 +1000,15 @@ async function handleAddAdmin() {
     const name = document.getElementById('new-admin-name').value.trim();
     const newEmail = document.getElementById('new-admin-email').value.trim();
     const errorEl = document.getElementById('add-admin-error');
-    
+
     if (!name || !newEmail) {
         errorEl.textContent = 'Please fill all fields.';
         return;
     }
-    
+
     document.getElementById('btn-submit-add-admin').disabled = true;
     errorEl.textContent = 'Adding...';
-    
+
     try {
         const res = await sendBackendRequest({
             action: 'addAdministrator',
@@ -1016,7 +1016,7 @@ async function handleAddAdmin() {
             newName: name,
             newEmail: newEmail
         });
-        
+
         if (res.success) {
             document.getElementById('modal-add-admin').classList.remove('active');
             document.getElementById('new-admin-name').value = '';
@@ -1035,14 +1035,14 @@ async function handleAddAdmin() {
 
 async function deactivateAdmin(targetEmail) {
     if (!confirm(`Are you sure you want to deactivate ${targetEmail}?`)) return;
-    
+
     try {
         const res = await sendBackendRequest({
             action: 'deactivateAdministrator',
             sessionToken: currentSessionToken,
             targetEmail: targetEmail
         });
-        
+
         if (res.success) {
             loadAdministrators();
         } else {
@@ -1055,14 +1055,14 @@ async function deactivateAdmin(targetEmail) {
 
 async function reactivateAdmin(targetEmail) {
     if (!confirm(`Are you sure you want to reactivate ${targetEmail}?`)) return;
-    
+
     try {
         const res = await sendBackendRequest({
             action: 'reactivateAdministrator',
             sessionToken: currentSessionToken,
             targetEmail: targetEmail
         });
-        
+
         if (res.success) {
             loadAdministrators();
         } else {

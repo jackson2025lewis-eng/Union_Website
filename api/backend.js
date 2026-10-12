@@ -3,7 +3,7 @@
  * Proxies frontend requests to Google Apps Script Web App (backed by Google Sheets & Google Drive)
  */
 
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbx65PRCECX0_xq-N9cpygnhG24rC0cYfW7V5PCYNMjEDmDSg9zuv3Mfy75QYeEtoLbfGw/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec';
 
 module.exports = async function handler(req, res) {
   // CORS configuration

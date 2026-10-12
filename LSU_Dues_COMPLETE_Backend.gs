@@ -1453,6 +1453,7 @@ function submitApplication(payload) {
       }
     };
 
+    setVal(["Timestamp"], new Date());
     setVal(["Membership Type", "Type"], data["Membership Type"] || (isStudent ? "CURRENT STUDENT" : "ALUMNI"));
     setVal(["First Name", "FirstName"], data["First Name"] || "");
     setVal(["Middle Name", "MiddleName"], data["Middle Name"] || "");
@@ -1573,8 +1574,35 @@ function sendDueOTP(email) {
   if (!validateEmail(email)) return { success: false, message: "Please enter a valid registered email address." };
 
   const member = lsuFindMemberByEmail_(email);
-  if (!member || !member.fullMember) {
-    return { success: false, message: "This email address is not associated with a confirmed LSU member." };
+  if (!member) {
+    return {
+      success: false,
+      message: "This email address is not registered in the LSU database. Please submit a membership registration application first."
+    };
+  }
+  if (!member.fullMember) {
+    if (member.status === "UNDER_REVIEW") {
+      return {
+        success: false,
+        message: "Your LSU membership application is currently under review. Dues payment is available once approved."
+      };
+    }
+    if (member.status === "VERIFICATION_PENDING") {
+      return {
+        success: false,
+        message: "Your membership application is pending verification. Please complete verification before paying dues."
+      };
+    }
+    if (member.status === "REJECTED") {
+      return {
+        success: false,
+        message: "Your membership application was not approved. Please contact the administrator."
+      };
+    }
+    return {
+      success: false,
+      message: "This email address is not associated with an approved, confirmed LSU member."
+    };
   }
 
   const otp = "DUE" + Math.floor(100 + Math.random() * 900);
@@ -1598,7 +1626,18 @@ function verifyDueOTP(email, enteredOTP) {
   enteredOTP = String(enteredOTP || "").trim().toUpperCase();
 
   const member = lsuFindMemberByEmail_(email);
-  if (!member || !member.fullMember) return { success: false, message: "This email address is not associated with a confirmed LSU member." };
+  if (!member) {
+    return {
+      success: false,
+      message: "This email address is not registered in the LSU database."
+    };
+  }
+  if (!member.fullMember) {
+    return {
+      success: false,
+      message: "This email address is not associated with an approved, confirmed LSU member."
+    };
+  }
 
   const raw = CacheService.getScriptCache().get(lsuDueOtpKey_(email));
   if (!raw) return { success: false, message: "Verification code expired or was not requested. Please request a new code." };
@@ -1637,10 +1676,16 @@ function getDuePaymentData(sessionToken, targetEmail) {
   const session = lsuRequireDueSession_(sessionToken);
   if (targetEmail) {
     const member = lsuFindMemberByEmail_(targetEmail);
-    if (!member || !member.fullMember) {
+    if (!member) {
       return {
         success: false,
-        message: "This member cannot be added because this email address is not associated with a registered full LSU member."
+        message: "This member cannot be added because this email address is not registered in the LSU database."
+      };
+    }
+    if (!member.fullMember) {
+      return {
+        success: false,
+        message: "This member cannot be added because this email address is not associated with a confirmed LSU member."
       };
     }
     return {
