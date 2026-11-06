@@ -544,10 +544,20 @@ document.addEventListener('DOMContentLoaded', () => {
                     dobFormatted = `${mm}/${dd}/${yyyy}`; // Format as MM/DD/YYYY
                 }
 
+                const submitErrorEl = document.getElementById('submit-error-msg');
+                if (submitErrorEl) {
+                    submitErrorEl.textContent = '';
+                    submitErrorEl.style.display = 'none';
+                }
+
                 const verificationToken = formData.verificationToken || sessionStorage.getItem('lsu_applicant_token') || '';
                 if (!verificationToken) {
-                    alert('Your email verification session has expired or is missing. Please verify your email first.');
                     showView('view-email');
+                    const emailError = document.getElementById('email-error');
+                    if (emailError) {
+                        emailError.textContent = 'Your email verification session has expired or is missing. Please verify your email first.';
+                        emailError.style.display = 'block';
+                    }
                     submitBtn.textContent = originalBtnText;
                     submitBtn.disabled = false;
                     return;
@@ -621,7 +631,12 @@ document.addEventListener('DOMContentLoaded', () => {
                     throw new Error(result.message || 'Submission rejected by server.');
                 }
             } catch (error) {
-                alert('Error submitting application: ' + error.message);
+                const submitErrorEl = document.getElementById('submit-error-msg');
+                if (submitErrorEl) {
+                    submitErrorEl.textContent = error.message || 'Unable to submit application. Please check your information and try again.';
+                    submitErrorEl.style.display = 'block';
+                    submitErrorEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
                 submitBtn.textContent = originalBtnText;
                 submitBtn.disabled = false;
             }

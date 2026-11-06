@@ -23,7 +23,20 @@ const CONFIG = {
 const CHIEF_ADMIN_EMAIL = "solojackson2022@gmail.com";
 const ADMIN_SHEET_NAME = "Administrators";
 const ADMIN_SESSION_TTL_SECONDS = 900;
+const ADMIN_SESSION_ABSOLUTE_TTL_SECONDS = 8 * 60 * 60;
 const ADMIN_SESSION_PREFIX = "LSU_ADMIN_SESSION_";
+const ADMIN_AUDIT_SHEET_NAME = "AdministratorAudit";
+const ADMIN_WORKBOOK_ID_PROPERTY_ = "LSU_ADMIN_WORKBOOK_ID";
+const ADMIN_INITIALIZED_PROPERTY_ = "LSU_ADMIN_INITIALIZED_WORKBOOK_ID";
+const ADMIN_SETUP_ACTION_PROPERTY_ = "LSU_ADMIN_SETUP_ACTION";
+const ADMIN_SETUP_ID_PROPERTY_ = "LSU_ADMIN_SETUP_SPREADSHEET_ID";
+const ADMIN_SETUP_CONFIRMATION_PROPERTY_ = "LSU_ADMIN_SETUP_CONFIRMATION";
+const ADMIN_ROLES_ = ["CHIEF_ADMINISTRATOR", "MEMBERSHIP_CO_ADMINISTRATOR", "FINANCIAL_CO_ADMINISTRATOR"];
+const ADMIN_PERMISSIONS_ = {
+  CHIEF_ADMINISTRATOR: ["membership", "finance", "manage_admins", "audit"],
+  MEMBERSHIP_CO_ADMINISTRATOR: ["membership"],
+  FINANCIAL_CO_ADMINISTRATOR: ["finance"]
+};
 
 const LSU_PAYMENT_CONFIG = {
   PAYMENT_SHEET_NAME: "Payments",
@@ -45,6 +58,43 @@ function jsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data))
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+function publicError_(message) {
+  const error = new Error(message);
+  error.publicMessage = message;
+  return error;
+}
+
+const SAFE_PUBLIC_ERROR_MESSAGES_ = new Set([
+  "Authorization denied.", "Administrator configuration requires manual review.",
+  "Invalid email.", "Cannot add the Chief Administrator again.", "This email is already registered as an administrator.",
+  "Invalid administrator role.", "The active account limit for this administrator role has been reached.",
+  "Cannot deactivate the Chief Administrator.", "Administrator not found.", "Administrator management is busy. Please retry.",
+  "Document type and reason required for updates.", "Applicant email not found. The document update request was not sent.",
+  "Cannot confirm your own application.", "Rejection reason is required.",
+  "The document update request could not be emailed. Please check the email service and try again.",
+  "Applicant email not found.", "The document update link could not be emailed. Please check the email service and try again.",
+  "Please enter a valid email address.", "Please wait 60 seconds before requesting a new verification code.",
+  "CAPTCHA verification is required. Please complete the CAPTCHA.",
+  "Registration verification is temporarily unavailable. Please try again later.",
+  "CAPTCHA verification failed or has expired. Please refresh the page and try again.",
+  "Unable to verify CAPTCHA with Cloudflare. Please try again.",
+  "Email and OTP are required.", "Verification token is required. Please verify your email before submitting.",
+  "Your email verification session has expired or is invalid. Please verify your email again.",
+  "This verification session has already been used to submit an application.", "Your verification session has expired. Please verify your email again.",
+  "The submitted application email does not match the verified email address.", "Identification Photo is required.",
+  "Passport Document is required.", "EFRO Document is required for Current Students.", "Total document upload size exceeds the maximum limit of 15 MB.",
+  "Each payment amount must be greater than zero.", "Please select Online / UPI or Cash.",
+  "Select at least one member and no more than three members.", "A valid member email is required.",
+  "Duplicate member emails are not allowed.", "Payer email cannot be added when paying for other members.",
+  "You can pay for a maximum of two other members.", "A payment can cover the payer and up to two other members.",
+  "UPI Ref No. is required.", "Payment date is required.", "Please confirm the payment before submitting.",
+  "Cash payment date is required.", "Cash receiver name is required.", "Cash receiver position is required.",
+  "Please confirm the cash payment before submitting.", "Payment ID is required.", "Payment not found.",
+  "This payment has already been processed.", "Payment total does not match its allocation amounts.",
+  "Payment system is busy. Please retry in a moment.", "Rejection reason is required.",
+  "The server is busy processing other applications. Please click submit again.", "Server is busy. Please retry."
+]);
 
 function extractEmail(str) {
   if (!str) return "";
@@ -167,32 +217,217 @@ function ensureOTPSheet() {
 
 function ensureAdministratorSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const spreadsheetId = ss && typeof ss.getId === "function" ? String(ss.getId() || "") : "";
+  const props = PropertiesService.getScriptProperties();
+  const boundId = props.getProperty(ADMIN_WORKBOOK_ID_PROPERTY_);
+  const initializedId = props.getProperty(ADMIN_INITIALIZED_PROPERTY_);
+  if (!spreadsheetId || !boundId || spreadsheetId !== boundId || (initializedId && spreadsheetId !== initializedId)) {
+    Logger.log("Administrator workbook identity is missing or mismatched.");
+    throw publicError_("Administrator configuration requires manual review.");
+  }
   let sheet = ss.getSheetByName(ADMIN_SHEET_NAME);
-  if (!sheet) sheet = ss.insertSheet(ADMIN_SHEET_NAME);
-
   const headers = ["Email", "Name", "Role", "Status", "Added Date", "Added By", "Admin OTP", "OTP Expiry", "OTP Verified", "OTP Attempts"];
-  const currentHeaders = sheet.getRange(1, 1, 1, headers.length).getValues()[0];
-  let headersNeedUpdate = false;
-  for (let i = 0; i < headers.length; i++) {
-    if (currentHeaders[i] !== headers[i]) {
-      headersNeedUpdate = true;
-      break;
-    }
+  if (!sheet) {
+    Logger.log("Administrators sheet is missing from the bound workbook.");
+    throw publicError_("Administrator configuration requires manual review.");
   }
-  if (headersNeedUpdate) sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  return validateAdminSheet_(sheet, headers, "Administrators").sheet;
+}
 
-  const data = sheet.getDataRange().getValues();
-  let chiefExists = false;
+function assertAdminWorkbookId_(verb) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const actualId = ss && typeof ss.getId === "function" ? String(ss.getId() || "") : "";
+  const props = PropertiesService.getScriptProperties();
+  const spreadsheetId = String(props.getProperty(ADMIN_SETUP_ID_PROPERTY_) || "");
+  const confirmation = String(props.getProperty(ADMIN_SETUP_CONFIRMATION_PROPERTY_) || "");
+  const setupAction = String(props.getProperty(ADMIN_SETUP_ACTION_PROPERTY_) || "");
+  const expectedConfirmation = verb + " LSU ADMINISTRATORS FOR " + String(spreadsheetId || "");
+  if (!actualId || !spreadsheetId || actualId !== spreadsheetId || setupAction !== verb || confirmation !== expectedConfirmation) {
+    throw publicError_("Administrator workbook identity requires manual review.");
+  }
+  return { ss, props, spreadsheetId };
+}
+
+/** Set the three ADMIN_SETUP script properties, then run manually for a genuinely new blank workbook. */
+function initializeNewAdministratorInstallation_() {
+  const setup = assertAdminWorkbookId_("INITIALIZE"), ss = setup.ss, props = setup.props, spreadsheetId = setup.spreadsheetId;
+  if (props.getProperty(ADMIN_WORKBOOK_ID_PROPERTY_) || props.getProperty(ADMIN_INITIALIZED_PROPERTY_) || ss.getSheetByName(ADMIN_SHEET_NAME)) {
+    throw publicError_("Administrator configuration requires manual review.");
+  }
+  const sheets = ss.getSheets();
+  const isOnlyBlankDefaultSheet = sheets.length === 1 && sheets[0].getName() === "Sheet1" &&
+    sheets[0].getLastRow() === 0 && sheets[0].getLastColumn() === 0;
+  if (!isOnlyBlankDefaultSheet) throw publicError_("Administrator configuration requires manual review.");
+  const headers = ["Email", "Name", "Role", "Status", "Added Date", "Added By", "Admin OTP", "OTP Expiry", "OTP Verified", "OTP Attempts"];
+  const sheet = ss.insertSheet(ADMIN_SHEET_NAME);
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  sheet.appendRow([extractEmail(CHIEF_ADMIN_EMAIL), "Chief Administrator", "CHIEF_ADMINISTRATOR", "ACTIVE", new Date(), "SYSTEM", "", "", "No", 0]);
+  const schema = validateAdminSheet_(sheet, headers, "Administrators");
+  validateAdministratorData_(schema);
+  props.setProperty(ADMIN_WORKBOOK_ID_PROPERTY_, String(spreadsheetId));
+  props.setProperty(ADMIN_INITIALIZED_PROPERTY_, String(spreadsheetId));
+  props.deleteProperty(ADMIN_SETUP_ACTION_PROPERTY_);
+  props.deleteProperty(ADMIN_SETUP_ID_PROPERTY_);
+  props.deleteProperty(ADMIN_SETUP_CONFIRMATION_PROPERTY_);
+  return { success: true, message: "New administrator installation initialized." };
+}
+
+/** Set the three ADMIN_SETUP script properties, then run manually to bind a reviewed existing workbook. */
+function bindExistingAdministratorWorkbook_() {
+  const setup = assertAdminWorkbookId_("BIND"), ss = setup.ss, props = setup.props, spreadsheetId = setup.spreadsheetId;
+  const sheet = ss.getSheetByName(ADMIN_SHEET_NAME);
+  if (!sheet) throw publicError_("Administrator configuration requires manual review.");
+  const headers = ["Email", "Name", "Role", "Status", "Added Date", "Added By", "Admin OTP", "OTP Expiry", "OTP Verified", "OTP Attempts"];
+  const schema = validateAdminSheet_(sheet, headers, "Administrators");
+  validateAdministratorData_(schema);
+  const priorId = props.getProperty(ADMIN_WORKBOOK_ID_PROPERTY_);
+  const initializedId = props.getProperty(ADMIN_INITIALIZED_PROPERTY_);
+  if ((priorId && priorId !== String(spreadsheetId)) || (initializedId && initializedId !== String(spreadsheetId))) {
+    throw publicError_("Administrator workbook identity requires manual review.");
+  }
+  props.setProperty(ADMIN_WORKBOOK_ID_PROPERTY_, String(spreadsheetId));
+  props.deleteProperty(ADMIN_SETUP_ACTION_PROPERTY_);
+  props.deleteProperty(ADMIN_SETUP_ID_PROPERTY_);
+  props.deleteProperty(ADMIN_SETUP_CONFIRMATION_PROPERTY_);
+  return { success: true, message: "Reviewed administrator workbook bound without changing sheet data." };
+}
+
+function validateAdminSheet_(sheet, required, label) {
+  try {
+    const width = Math.max(sheet.getLastColumn(), 1);
+    const headers = sheet.getRange(1, 1, 1, width).getDisplayValues()[0].map(v => String(v || "").trim().toLowerCase());
+    const columns = {};
+    required.forEach(name => {
+      const matches = [];
+      headers.forEach((header, i) => { if (header === name.toLowerCase()) matches.push(i + 1); });
+      if (matches.length !== 1) throw new Error(name + " column occurs " + matches.length + " times");
+      columns[name] = matches[0];
+    });
+    return { sheet, columns };
+  } catch (err) {
+    Logger.log(label + " schema validation failed (" + String(err && err.name || "Error") + ").");
+    const safe = new Error("Administrator configuration requires manual review.");
+    safe.publicMessage = safe.message;
+    throw safe;
+  }
+}
+
+function administratorSchema_() {
+  const schema = validateAdminSheet_(ensureAdministratorSheet(), ["Email", "Name", "Role", "Status", "Added Date", "Added By", "Admin OTP", "OTP Expiry", "OTP Verified", "OTP Attempts"], "Administrators");
+  validateAdministratorData_(schema);
+  return schema;
+}
+
+function validateAdministratorData_(schema) {
+  const data = schema.sheet.getDataRange().getValues(), c = schema.columns;
+  const seenEmails = Object.create(null);
+  const chiefEmail = extractEmail(CHIEF_ADMIN_EMAIL);
+  let chiefRows = 0;
   for (let i = 1; i < data.length; i++) {
-    if (extractEmail(data[i][0]) === extractEmail(CHIEF_ADMIN_EMAIL)) {
-      chiefExists = true;
-      break;
+    const row = data[i];
+    if (!row.some(value => String(value === null || value === undefined ? "" : value).trim() !== "")) continue;
+    const rawEmail = String(row[c.Email - 1] || "").trim();
+    const normalizedEmail = extractEmail(rawEmail);
+    const role = String(row[c.Role - 1] || "").trim().toUpperCase();
+    const status = String(row[c.Status - 1] || "").trim().toUpperCase();
+    if (!normalizedEmail || rawEmail.toLowerCase() !== normalizedEmail || seenEmails[normalizedEmail]) {
+      Logger.log("Administrators data validation failed: invalid or duplicate normalized email at row " + (i + 1) + ".");
+      throw publicError_("Administrator configuration requires manual review.");
+    }
+    seenEmails[normalizedEmail] = true;
+    if (!["CHIEF_ADMINISTRATOR", "CHIEF_ADMIN", "MEMBERSHIP_CO_ADMINISTRATOR", "FINANCIAL_CO_ADMINISTRATOR", "CO_ADMINISTRATOR"].includes(role)) {
+      Logger.log("Administrators data validation failed: unsupported role at row " + (i + 1) + ".");
+      throw publicError_("Administrator configuration requires manual review.");
+    }
+    if (!["ACTIVE", "DEACTIVATED"].includes(status)) {
+      Logger.log("Administrators data validation failed: unsupported status at row " + (i + 1) + ".");
+      throw publicError_("Administrator configuration requires manual review.");
+    }
+    if ((role === "CHIEF_ADMINISTRATOR" || role === "CHIEF_ADMIN") && normalizedEmail !== chiefEmail) {
+      Logger.log("Administrators data validation failed: non-designated account carries Chief role at row " + (i + 1) + ".");
+      throw publicError_("Administrator configuration requires manual review.");
+    }
+    if (normalizedEmail === chiefEmail) {
+      chiefRows++;
+      if (!((role === "CHIEF_ADMINISTRATOR" || role === "CHIEF_ADMIN") && status === "ACTIVE")) {
+        Logger.log("Administrators data validation failed: designated Chief record is not valid and active.");
+        throw publicError_("Administrator configuration requires manual review.");
+      }
     }
   }
-  if (!chiefExists) {
-    sheet.appendRow([CHIEF_ADMIN_EMAIL.toLowerCase(), "Chief Administrator", "CHIEF_ADMINISTRATOR", "ACTIVE", new Date(), "SYSTEM", "", "", "No", 0]);
+  if (chiefRows !== 1) {
+    Logger.log("Administrators data validation failed: expected one designated Chief record; found " + chiefRows + ".");
+    throw publicError_("Administrator configuration requires manual review.");
   }
-  return sheet;
+  return true;
+}
+
+function ensureAdminAuditSheet_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  let sheet = ss.getSheetByName(ADMIN_AUDIT_SHEET_NAME);
+  const headers = ["Timestamp", "Administrator", "Role", "Action", "Target", "Outcome", "Details"];
+  if (!sheet) {
+    sheet = ss.insertSheet(ADMIN_AUDIT_SHEET_NAME);
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+  }
+  return validateAdminSheet_(sheet, headers, "AdministratorAudit");
+}
+
+function auditAdminAction_(session, action, target, outcome, details) {
+  try {
+    const schema = ensureAdminAuditSheet_();
+    const row = new Array(Math.max(schema.sheet.getLastColumn(), 7)).fill("");
+    const values = [new Date(), session && session.email || "UNKNOWN", session && session.role || "UNKNOWN", String(action || ""), String(target || ""), String(outcome || ""), String(details || "").slice(0, 500)];
+    ["Timestamp", "Administrator", "Role", "Action", "Target", "Outcome", "Details"].forEach((name, i) => { row[schema.columns[name] - 1] = values[i]; });
+    schema.sheet.appendRow(row);
+    return true;
+  } catch (auditError) {
+    Logger.log("Administrator audit write failed.");
+    return false;
+  }
+}
+
+function beginAdminAudit_(session, action, target, details) {
+  const schema = ensureAdminAuditSheet_();
+  const row = new Array(Math.max(schema.sheet.getLastColumn(), 7)).fill("");
+  const values = [new Date(), session.email, session.role, action, target || "", "IN_PROGRESS", String(details || "").slice(0, 500)];
+  ["Timestamp", "Administrator", "Role", "Action", "Target", "Outcome", "Details"].forEach((name, i) => { row[schema.columns[name] - 1] = values[i]; });
+  schema.sheet.appendRow(row);
+  return { sheet: schema.sheet, columns: schema.columns, row: schema.sheet.getLastRow() };
+}
+
+function finishAdminAudit_(entry, outcome, details) {
+  try {
+    entry.sheet.getRange(entry.row, entry.columns.Outcome).setValue(outcome);
+    if (details !== undefined) entry.sheet.getRange(entry.row, entry.columns.Details).setValue(String(details).slice(0, 500));
+    return true;
+  } catch (err) {
+    Logger.log("Administrator audit completion failed; an IN_PROGRESS audit row may remain.");
+    return false;
+  }
+}
+
+function auditResult_(result, audited) {
+  if (result && typeof result === "object" && !audited) {
+    result.auditWarning = true;
+    result.message = String(result.message || "Operation completed.") + " Audit status could not be finalized; contact the Chief Administrator.";
+  }
+  return result;
+}
+
+function getAdministratorAuditLog(sessionToken) {
+  requireAdministratorPermission_(sessionToken, "audit");
+  const schema = ensureAdminAuditSheet_();
+  const sheet = schema.sheet;
+  const values = sheet.getDataRange().getValues();
+  return {
+    success: true,
+    records: values.slice(1).reverse().slice(0, 200).map(row => ({
+      timestamp: row[schema.columns.Timestamp - 1] instanceof Date ? Utilities.formatDate(row[schema.columns.Timestamp - 1], Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss") : String(row[schema.columns.Timestamp - 1] || ""),
+      administrator: String(row[schema.columns.Administrator - 1] || ""), role: String(row[schema.columns.Role - 1] || ""), action: String(row[schema.columns.Action - 1] || ""),
+      target: String(row[schema.columns.Target - 1] || ""), outcome: String(row[schema.columns.Outcome - 1] || ""), details: String(row[schema.columns.Details - 1] || "")
+    }))
+  };
 }
 
 function lsuPaymentSheet_(name, headers) {
@@ -225,7 +460,7 @@ function sendSecureEmail(toEmail, subject, bodyText) {
   const cleanEmail = extractEmail(toEmail);
   if (!cleanEmail) {
     Logger.log("sendSecureEmail skipped: Invalid recipient: " + toEmail);
-    return;
+    return false;
   }
   try {
     MailApp.sendEmail({
@@ -233,12 +468,15 @@ function sendSecureEmail(toEmail, subject, bodyText) {
       subject: subject,
       body: bodyText
     });
+    return true;
   } catch (mailErr) {
     Logger.log("MailApp.sendEmail error: " + mailErr.toString() + ". Retrying with GmailApp...");
     try {
       GmailApp.sendEmail(cleanEmail, subject, bodyText);
+      return true;
     } catch (gmailErr) {
       Logger.log("GmailApp.sendEmail failed: " + gmailErr.toString());
+      return false;
     }
   }
 }
@@ -312,21 +550,19 @@ function archiveOldDocument(oldUrl) {
  *******************************************************/
 
 /**
- * Validates Cloudflare Turnstile token server-side via official Siteverify endpoint.
- * Resilient: enforces verification if secret is configured in Script Properties.
+ * Validates the registration Turnstile token via Cloudflare Siteverify.
  */
 function validateCloudflareTurnstile_(turnstileToken) {
-  const turnstileSecret = PropertiesService.getScriptProperties().getProperty("CLOUDFLARE_TURNSTILE_SECRET");
-  if (!turnstileSecret) {
-    Logger.log("Notice: CLOUDFLARE_TURNSTILE_SECRET is not configured in Script Properties. Turnstile validation skipped.");
-    return true;
-  }
-  
   const token = String(turnstileToken || "").trim();
   if (!token) {
     throw new Error("CAPTCHA verification is required. Please complete the CAPTCHA.");
   }
-  
+
+  const turnstileSecret = PropertiesService.getScriptProperties().getProperty("CLOUDFLARE_TURNSTILE_SECRET");
+  if (!turnstileSecret) {
+    throw new Error("Registration verification is temporarily unavailable. Please try again later.");
+  }
+
   try {
     const response = UrlFetchApp.fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
       method: "post",
@@ -336,19 +572,20 @@ function validateCloudflareTurnstile_(turnstileToken) {
       },
       muteHttpExceptions: true
     });
-    
+
+    if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) {
+      throw new Error("Cloudflare verification request failed.");
+    }
+
     const result = JSON.parse(response.getContentText());
     if (!result || result.success !== true) {
-      const errorCodes = (result && Array.isArray(result['error-codes'])) ? result['error-codes'].join(', ') : 'Verification rejected';
-      Logger.log("Cloudflare Turnstile verification failed. Code: " + errorCodes);
       throw new Error("CAPTCHA verification failed or has expired. Please refresh the page and try again.");
     }
     return true;
-  } catch (e) {
-    if (e.message && e.message.includes("CAPTCHA")) {
-      throw e;
+  } catch (error) {
+    if (error.message === "CAPTCHA verification failed or has expired. Please refresh the page and try again.") {
+      throw error;
     }
-    Logger.log("Cloudflare Turnstile network error: " + e.message);
     throw new Error("Unable to verify CAPTCHA with Cloudflare. Please try again.");
   }
 }
@@ -391,74 +628,119 @@ function isChiefAdministrator(email) {
   return (extractEmail(email) === extractEmail(CHIEF_ADMIN_EMAIL));
 }
 
+function adminRecord_(email) {
+  email = extractEmail(email);
+  if (!email) return null;
+  const schema = administratorSchema_();
+  const sheet = schema.sheet, c = schema.columns;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (extractEmail(data[i][c.Email - 1]) === email) {
+      const role = String(data[i][c.Role - 1] || "").trim().toUpperCase();
+      const status = String(data[i][c.Status - 1] || "").trim().toUpperCase();
+      if (email === extractEmail(CHIEF_ADMIN_EMAIL) && role === "CHIEF_ADMIN") return { row: i + 1, email, name: String(data[i][c.Name - 1] || "Chief Administrator"), role: "CHIEF_ADMINISTRATOR", status };
+      return { row: i + 1, email, name: String(data[i][c.Name - 1] || "Administrator"), role, status };
+    }
+  }
+  return null;
+}
+
 function checkAdministratorAccess(email) {
   email = extractEmail(email);
   if (!email) return { success: false, authorized: false, message: "Email required." };
-  
-  if (isChiefAdministrator(email)) {
-    return { success: true, authorized: true, role: "CHIEF_ADMINISTRATOR", name: "Chief Administrator", message: "Confirmed." };
-  }
-  
-  const sheet = ensureAdministratorSheet();
-  const data = sheet.getDataRange().getValues();
-  for (let i = 1; i < data.length; i++) {
-    if (extractEmail(data[i][0]) === email && String(data[i][3]).trim().toUpperCase() === "ACTIVE") {
-      return { success: true, authorized: true, role: String(data[i][2]), name: String(data[i][1]), message: "Confirmed." };
-    }
+  const record = adminRecord_(email);
+  if (record && record.status === "ACTIVE" && ADMIN_ROLES_.includes(record.role) &&
+      ((isChiefAdministrator(email) && record.role === "CHIEF_ADMINISTRATOR") || (!isChiefAdministrator(email) && record.role !== "CHIEF_ADMINISTRATOR"))) {
+    return { success: true, authorized: true, role: record.role, name: record.name, message: "Confirmed." };
   }
   return { success: false, authorized: false, message: "You are not authorized to access the Administrator Portal." };
 }
 
-function getActiveCoAdminCount(data) {
+function getActiveCoAdminCount(data, expectedRole, excludedSheetRow, columns) {
+  columns = columns || administratorSchema_().columns;
   let count = 0;
   for (let i = 1; i < data.length; i++) {
-    const role = String(data[i][2]).trim().toUpperCase();
-    const status = String(data[i][3]).trim().toUpperCase();
-    if (role === "CO_ADMINISTRATOR" && status === "ACTIVE") count++;
+    if (i + 1 === excludedSheetRow) continue;
+    const role = String(data[i][columns.Role - 1] || "").trim().toUpperCase();
+    const status = String(data[i][columns.Status - 1] || "").trim().toUpperCase();
+    // Unassigned legacy rows are not charged against either role; the destination role
+    // limit is checked as each Chief-authorized migration is applied.
+    if (role === expectedRole && status === "ACTIVE") count++;
   }
   return count;
 }
 
+function requireAdministratorPermission_(token, permission) {
+  const tokenValue = String(token || "").trim();
+  const cache = CacheService.getScriptCache();
+  const cached = tokenValue && cache.get(ADMIN_SESSION_PREFIX + tokenValue);
+  if (!cached) throw new Error("Authorization denied.");
+  let identity;
+  try { identity = JSON.parse(cached); } catch (e) { cache.remove(ADMIN_SESSION_PREFIX + tokenValue); throw new Error("Authorization denied."); }
+  const createdAt = Number(identity.createdAt || 0);
+  if (!createdAt || Date.now() - createdAt >= ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000) {
+    cache.remove(ADMIN_SESSION_PREFIX + tokenValue);
+    throw new Error("Authorization denied.");
+  }
+  const revokedAt = Number(cache.get("LSU_ADMIN_REVOKE_" + extractEmail(identity.email)) || 0);
+  if (revokedAt && Number(identity.issuedAt || 0) <= revokedAt) {
+    cache.remove(ADMIN_SESSION_PREFIX + tokenValue);
+    throw new Error("Authorization denied.");
+  }
+  const access = checkAdministratorAccess(identity.email);
+  if (!access.authorized || access.role !== identity.role || !ADMIN_PERMISSIONS_[access.role] || !ADMIN_PERMISSIONS_[access.role].includes(permission)) {
+    auditAdminAction_({ email: access.authorized ? extractEmail(identity.email) : identity.email, role: access.authorized ? access.role : "UNKNOWN" }, "authorization_denied", "", "DENIED", permission);
+    cache.remove(ADMIN_SESSION_PREFIX + tokenValue);
+    throw new Error("Authorization denied.");
+  }
+  const fresh = { email: extractEmail(identity.email), role: access.role, name: access.name, issuedAt: Number(identity.issuedAt || createdAt), createdAt };
+  const idleTtl = Math.min(ADMIN_SESSION_TTL_SECONDS, Math.max(1, Math.ceil((ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000 - (Date.now() - createdAt)) / 1000)));
+  cache.put(ADMIN_SESSION_PREFIX + tokenValue, JSON.stringify(fresh), idleTtl);
+  return fresh;
+}
+
+function requireAdministratorSession(token) { return requireAdministratorPermission_(token, "membership"); }
+
 function getAdministrators(sessionToken) {
-  const session = requireAdministratorSession(sessionToken);
-  if (session.role !== "CHIEF_ADMINISTRATOR") throw new Error("Unauthorized.");
-  
-  const sheet = ensureAdministratorSheet();
+  const session = requireAdministratorPermission_(sessionToken, "manage_admins");
+  const schema = administratorSchema_(), sheet = schema.sheet, c = schema.columns;
   const data = sheet.getDataRange().getValues();
   const admins = [];
   for (let i = 1; i < data.length; i++) {
     admins.push({
-      email: data[i][0], name: data[i][1], role: data[i][2], status: data[i][3],
-      addedDate: data[i][4] ? Utilities.formatDate(new Date(data[i][4]), Session.getScriptTimeZone(), "yyyy-MM-dd") : "",
-      addedBy: data[i][5]
+      email: data[i][c.Email - 1], name: data[i][c.Name - 1], role: data[i][c.Role - 1], status: data[i][c.Status - 1],
+      addedDate: data[i][c["Added Date"] - 1] ? Utilities.formatDate(new Date(data[i][c["Added Date"] - 1]), Session.getScriptTimeZone(), "yyyy-MM-dd") : "",
+      addedBy: data[i][c["Added By"] - 1]
     });
   }
   return { success: true, administrators: admins };
 }
 
-function addAdministrator(sessionToken, newEmail, newName) {
-  const session = requireAdministratorSession(sessionToken);
-  if (session.role !== "CHIEF_ADMINISTRATOR") throw new Error("Only the Chief Administrator can add co-administrators.");
+function addAdministrator(sessionToken, newEmail, newName, requestedRole) {
+  const session = requireAdministratorPermission_(sessionToken, "manage_admins");
   
   newEmail = extractEmail(newEmail);
   newName = String(newName || "").trim();
   if (!validateEmail(newEmail)) throw new Error("Invalid email.");
   if (isChiefAdministrator(newEmail)) throw new Error("Cannot add the Chief Administrator again.");
   
-  const sheet = ensureAdministratorSheet();
+  const schema = administratorSchema_(), sheet = schema.sheet, c = schema.columns;
   const data = sheet.getDataRange().getValues();
   
   for (let i = 1; i < data.length; i++) {
-    if (extractEmail(data[i][0]) === newEmail) {
+    if (extractEmail(data[i][c.Email - 1]) === newEmail) {
       throw new Error("This email is already registered as an administrator.");
     }
   }
   
-  if (getActiveCoAdminCount(data) >= 3) {
-    throw new Error("Maximum of 3 active co-administrators reached. Deactivate one before adding another.");
-  }
-  
-  sheet.appendRow([newEmail, newName, "CO_ADMINISTRATOR", "ACTIVE", new Date(), session.email, "", "", "No", 0]);
+  const role = String(requestedRole || "").trim().toUpperCase();
+  if (!["MEMBERSHIP_CO_ADMINISTRATOR", "FINANCIAL_CO_ADMINISTRATOR"].includes(role)) throw new Error("Invalid administrator role.");
+  if (getActiveCoAdminCount(data, role, undefined, c) >= 2) throw new Error("The active account limit for this administrator role has been reached.");
+  const auditEntry = beginAdminAudit_(session, "administrator_created", newEmail, role);
+  const newRow = new Array(Math.max(sheet.getLastColumn(), 10)).fill("");
+  newRow[c.Email - 1] = newEmail; newRow[c.Name - 1] = newName; newRow[c.Role - 1] = role; newRow[c.Status - 1] = "ACTIVE";
+  newRow[c["Added Date"] - 1] = new Date(); newRow[c["Added By"] - 1] = session.email; newRow[c["OTP Verified"] - 1] = "No"; newRow[c["OTP Attempts"] - 1] = 0;
+  sheet.appendRow(newRow);
   
   sendSecureEmail(
     newEmail,
@@ -466,45 +748,105 @@ function addAdministrator(sessionToken, newEmail, newName) {
     `Dear ${newName},\n\nYou have been authorized as an LSU Co-Administrator by the Chief Administrator.\n\nYou can now log into the Administrator Portal using this email address. You will receive a verification code upon login.\n\nRegards,\nLiberian Students Union in Odisha`
   );
   
-  return { success: true, message: "Co-Administrator added successfully." };
+  return auditResult_({ success: true, message: "Co-Administrator added successfully." }, finishAdminAudit_(auditEntry, "SUCCESS", role));
 }
 
 function deactivateAdministrator(sessionToken, targetEmail) {
-  const session = requireAdministratorSession(sessionToken);
-  if (session.role !== "CHIEF_ADMINISTRATOR") throw new Error("Unauthorized.");
+  const session = requireAdministratorPermission_(sessionToken, "manage_admins");
   targetEmail = extractEmail(targetEmail);
   if (isChiefAdministrator(targetEmail)) throw new Error("Cannot deactivate the Chief Administrator.");
   
-  const sheet = ensureAdministratorSheet();
+  const schema = administratorSchema_(), sheet = schema.sheet, c = schema.columns;
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
-    if (extractEmail(data[i][0]) === targetEmail) {
-      sheet.getRange(i + 1, 4).setValue("DEACTIVATED");
-      return { success: true, message: "Administrator deactivated." };
+    if (extractEmail(data[i][c.Email - 1]) === targetEmail) {
+      const targetRole = String(data[i][c.Role - 1] || "").trim().toUpperCase();
+      if (targetRole === "CHIEF_ADMINISTRATOR" || isChiefAdministrator(targetEmail)) throw new Error("Authorization denied.");
+      const auditEntry = beginAdminAudit_(session, "administrator_deactivated", targetEmail, targetRole);
+      ["Admin OTP", "OTP Expiry", "OTP Verified", "OTP Attempts"].forEach(name => sheet.getRange(i + 1, c[name]).clearContent());
+      sheet.getRange(i + 1, c.Status).setValue("DEACTIVATED");
+      revokeAdministratorSessions_(targetEmail);
+      return auditResult_({ success: true, message: "Administrator deactivated." }, finishAdminAudit_(auditEntry, "SUCCESS", targetRole));
     }
   }
   throw new Error("Administrator not found.");
 }
 
 function reactivateAdministrator(sessionToken, targetEmail) {
-  const session = requireAdministratorSession(sessionToken);
-  if (session.role !== "CHIEF_ADMINISTRATOR") throw new Error("Unauthorized.");
+  const session = requireAdministratorPermission_(sessionToken, "manage_admins");
   targetEmail = extractEmail(targetEmail);
   
-  const sheet = ensureAdministratorSheet();
+  const schema = administratorSchema_(), sheet = schema.sheet, c = schema.columns;
   const data = sheet.getDataRange().getValues();
   
-  if (getActiveCoAdminCount(data) >= 3) {
-    throw new Error("Cannot reactivate: Maximum 3 active co-administrators currently active.");
-  }
-  
   for (let i = 1; i < data.length; i++) {
-    if (extractEmail(data[i][0]) === targetEmail) {
-      sheet.getRange(i + 1, 4).setValue("ACTIVE");
-      return { success: true, message: "Administrator reactivated." };
+    if (extractEmail(data[i][c.Email - 1]) === targetEmail) {
+      const role = String(data[i][c.Role - 1] || "").trim().toUpperCase();
+      if (!ADMIN_ROLES_.includes(role) || role === "CHIEF_ADMINISTRATOR" || isChiefAdministrator(targetEmail)) throw new Error("Invalid administrator role.");
+      if (getActiveCoAdminCount(data, role, undefined, c) >= 2) throw new Error("The active account limit for this administrator role has been reached.");
+      const auditEntry = beginAdminAudit_(session, "administrator_activated", targetEmail, role);
+      sheet.getRange(i + 1, c.Status).setValue("ACTIVE");
+      return auditResult_({ success: true, message: "Administrator reactivated." }, finishAdminAudit_(auditEntry, "SUCCESS", role));
     }
   }
   throw new Error("Administrator not found.");
+}
+
+function changeAdministratorRole(sessionToken, targetEmail, newRole) {
+  const session = requireAdministratorPermission_(sessionToken, "manage_admins");
+  targetEmail = extractEmail(targetEmail);
+  newRole = String(newRole || "").trim().toUpperCase();
+  if (!["MEMBERSHIP_CO_ADMINISTRATOR", "FINANCIAL_CO_ADMINISTRATOR"].includes(newRole) || isChiefAdministrator(targetEmail)) {
+    auditAdminAction_(session, "legacy_coadministrator_migration", targetEmail, "FAILED", "Unsupported destination or protected Chief target; no account change was made.");
+    throw new Error("Invalid administrator role.");
+  }
+  const schema = administratorSchema_(), sheet = schema.sheet, c = schema.columns;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if (extractEmail(data[i][c.Email - 1]) !== targetEmail) continue;
+    const oldRole = String(data[i][c.Role - 1] || "").trim().toUpperCase();
+    if (oldRole === "CHIEF_ADMINISTRATOR") throw new Error("Authorization denied.");
+    if (oldRole === newRole) return { success: true, message: "Administrator role is unchanged." };
+    const isLegacyMigration = oldRole === "CO_ADMINISTRATOR";
+    const auditAction = isLegacyMigration ? "legacy_coadministrator_migration" : "administrator_role_changed";
+    const auditEntry = beginAdminAudit_(session, auditAction, targetEmail, oldRole + " -> " + newRole);
+    if (String(data[i][c.Status - 1] || "").trim().toUpperCase() === "ACTIVE" && getActiveCoAdminCount(data, newRole, i + 1, c) >= 2) {
+      finishAdminAudit_(auditEntry, "FAILED", "Capacity conflict: destination role already has two active accounts; no account change was made.");
+      throw publicError_("Cannot assign this account: the selected role already has two active accounts.");
+    }
+    sheet.getRange(i + 1, c.Role).setValue(newRole);
+    revokeAdministratorSessions_(targetEmail);
+    const message = isLegacyMigration ? "Legacy co-administrator migrated successfully." : "Administrator role updated.";
+    return auditResult_({ success: true, message }, finishAdminAudit_(auditEntry, "SUCCESS", oldRole + " -> " + newRole));
+  }
+  auditAdminAction_(session, "legacy_coadministrator_migration", targetEmail, "FAILED", "Target account not found; no account change was made.");
+  throw new Error("Administrator not found.");
+}
+
+function revokeAdministratorSessions_(email) {
+  const cache = CacheService.getScriptCache();
+  const key = "LSU_ADMIN_REVOKE_" + extractEmail(email);
+  cache.put(key, String(Date.now()), ADMIN_SESSION_TTL_SECONDS);
+}
+
+function withAdministratorManagementLock_(callback) {
+  const lock = LockService.getScriptLock();
+  try { lock.waitLock(10000); } catch (e) { throw new Error("Administrator management is busy. Please retry."); }
+  try { return callback(); } finally { lock.releaseLock(); }
+}
+
+function allowAdministratorOtpRequest_(email) {
+  const cache = CacheService.getScriptCache();
+  const key = "LSU_ADMIN_OTP_RATE_" + extractEmail(email);
+  const current = Number(cache.get(key) || 0);
+  if (current >= 3) return false;
+  cache.put(key, String(current + 1), 600);
+  return true;
+}
+
+function administratorCode_() {
+  const digits = Utilities.getUuid().replace(/\D/g, "").padEnd(3, "7").slice(0, 3);
+  return "ADM" + digits + "LSU";
 }
 
 function sendAdministratorOTP(email) {
@@ -513,26 +855,33 @@ function sendAdministratorOTP(email) {
   
   const access = checkAdministratorAccess(email);
   if (!access.authorized) return { success: false, message: "You are not authorized to access the Administrator Portal." };
+  if (!allowAdministratorOtpRequest_(email)) return { success: false, message: "Too many verification requests. Please try again later." };
 
-  const sheet = ensureAdministratorSheet();
+  const schema = administratorSchema_(), sheet = schema.sheet, c = schema.columns;
   const data = sheet.getDataRange().getValues();
   let rowNumber = -1;
   let adminName = access.name || "Administrator";
   for (let i = 1; i < data.length; i++) {
-    if (extractEmail(data[i][0]) === email) { rowNumber = i + 1; break; }
+    if (extractEmail(data[i][c.Email - 1]) === email) { rowNumber = i + 1; break; }
   }
   if (rowNumber === -1) return { success: false, message: "Administrator account not found." };
 
-  const otp = "ADM" + Math.floor(100 + Math.random() * 900) + "LSU";
+  const otp = administratorCode_();
   const expiresAt = new Date(Date.now() + CONFIG.OTP_EXPIRY_MINUTES * 60000);
 
-  sheet.getRange(rowNumber, 7, 1, 4).setValues([[otp, expiresAt, "No", 0]]);
+  sheet.getRange(rowNumber, c["Admin OTP"]).setValue(otp);
+  sheet.getRange(rowNumber, c["OTP Expiry"]).setValue(expiresAt);
+  sheet.getRange(rowNumber, c["OTP Verified"]).setValue("No");
+  sheet.getRange(rowNumber, c["OTP Attempts"]).setValue(0);
 
-  sendSecureEmail(
+  if (!sendSecureEmail(
     email,
     "LSU Administrator Verification Code",
     `Dear ${adminName},\n\nYour administrator verification code is:\n\n${otp}\n\nThis verification code will expire in ${CONFIG.OTP_EXPIRY_MINUTES} minutes.\n\nRegards,\nLiberian Students Union in Odisha`
-  );
+  )) {
+    ["Admin OTP", "OTP Expiry", "OTP Verified", "OTP Attempts"].forEach(name => sheet.getRange(rowNumber, c[name]).clearContent());
+    return { success: false, message: "Unable to send the verification code. Please try again later." };
+  }
   return { success: true, message: "Verification code sent to your email." };
 }
 
@@ -544,48 +893,46 @@ function verifyAdministratorOTP(email, enteredOTP) {
   const access = checkAdministratorAccess(email);
   if (!access.authorized) return { success: false, message: "Unauthorized account." };
 
-  const sheet = ensureAdministratorSheet();
+  const schema = administratorSchema_(), sheet = schema.sheet, c = schema.columns;
   const data = sheet.getDataRange().getValues();
   let rowNumber = -1;
   for (let i = 1; i < data.length; i++) {
-    if (extractEmail(data[i][0]) === email) { rowNumber = i + 1; break; }
+    if (extractEmail(data[i][c.Email - 1]) === email) { rowNumber = i + 1; break; }
   }
   if (rowNumber === -1) return { success: false, message: "Administrator account not found." };
 
-  const storedOTP = String(data[rowNumber - 1][6] || "").trim().toUpperCase();
-  const expiresAt = new Date(data[rowNumber - 1][7]);
-  const verified = String(data[rowNumber - 1][8] || "").trim().toUpperCase();
-  let attempts = Number(data[rowNumber - 1][9] || 0);
+  const storedOTP = String(data[rowNumber - 1][c["Admin OTP"] - 1] || "").trim().toUpperCase();
+  const expiresAt = new Date(data[rowNumber - 1][c["OTP Expiry"] - 1]);
+  const verified = String(data[rowNumber - 1][c["OTP Verified"] - 1] || "").trim().toUpperCase();
+  let attempts = Number(data[rowNumber - 1][c["OTP Attempts"] - 1] || 0);
 
   if (verified === "YES") return { success: false, message: "This verification code has already been used. Please request a new code." };
   if (attempts >= CONFIG.MAX_ATTEMPTS) return { success: false, message: "Maximum attempts reached. Please request a new code." };
   if (new Date() > expiresAt) return { success: false, message: "Verification code has expired. Please request a new code." };
 
   if (storedOTP === enteredOTP) {
-    sheet.getRange(rowNumber, 9).setValue("Yes");
+    sheet.getRange(rowNumber, c["OTP Verified"]).setValue("Yes");
     const sessionToken = Utilities.getUuid();
-    const sessionData = { email: email, role: access.role, name: access.name };
+    const createdAt = Date.now();
+    const sessionData = { email: email, role: access.role, name: access.name, issuedAt: createdAt, createdAt };
     CacheService.getScriptCache().put(ADMIN_SESSION_PREFIX + sessionToken, JSON.stringify(sessionData), ADMIN_SESSION_TTL_SECONDS);
+    auditAdminAction_(sessionData, "administrator_login", email, "SUCCESS", "OTP verified");
     return { success: true, sessionToken: sessionToken, role: access.role, name: access.name };
   }
 
   attempts++;
-  sheet.getRange(rowNumber, 10).setValue(attempts);
+  sheet.getRange(rowNumber, c["OTP Attempts"]).setValue(attempts);
   return { success: false, message: `Incorrect code. Attempt ${attempts}/${CONFIG.MAX_ATTEMPTS}.` };
 }
 
-function requireAdministratorSession(token) {
-  const cached = CacheService.getScriptCache().get(ADMIN_SESSION_PREFIX + String(token || "").trim());
-  if (!cached) throw new Error("Administrator session expired. Please log in again.");
-  const session = JSON.parse(cached);
-  const access = checkAdministratorAccess(session.email);
-  if (!access.authorized || access.role !== session.role) throw new Error("Administrator access revoked.");
-  CacheService.getScriptCache().put(ADMIN_SESSION_PREFIX + token, cached, ADMIN_SESSION_TTL_SECONDS);
-  return session;
-}
-
 function logoutAdministrator(token) {
-  CacheService.getScriptCache().remove(ADMIN_SESSION_PREFIX + String(token || "").trim());
+  const cache = CacheService.getScriptCache();
+  const tokenValue = String(token || "").trim();
+  const raw = cache.get(ADMIN_SESSION_PREFIX + tokenValue);
+  if (raw) {
+    try { auditAdminAction_(JSON.parse(raw), "administrator_logout", "", "SUCCESS", "Session revoked"); } catch (e) { }
+  }
+  cache.remove(ADMIN_SESSION_PREFIX + tokenValue);
   return { success: true };
 }
 
@@ -772,14 +1119,23 @@ function updateApplicationStatus(payload) {
       applicantName = (fn + " " + ln).trim() || "Applicant";
     }
     if (!applicantName) applicantName = "Applicant";
+
+    if (newStatus === "NEEDS_CLARIFICATION") {
+      if (!reason || !docType) throw new Error("Document type and reason required for updates.");
+      if (!applicantEmail) throw new Error("Applicant email not found. The document update request was not sent.");
+    }
     
     if ((newStatus === "CONFIRMED" || newStatus === "MEMBER_CONFIRMED") && applicantEmail.toLowerCase() === session.email.toLowerCase() && !isChiefAdministrator(session.email)) {
       throw new Error("Cannot confirm your own application.");
     }
+
+    const auditEntry = beginAdminAudit_(session, "membership_application_status_changed", appId, newStatus);
     
-    if (colStatus !== -1) sheet.getRange(targetRow, colStatus + 1).setValue(newStatus);
-    if (colReviewDate !== -1) sheet.getRange(targetRow, colReviewDate + 1).setValue(new Date());
-    if (colReviewedBy !== -1) sheet.getRange(targetRow, colReviewedBy + 1).setValue(session.email);
+    if (newStatus !== "NEEDS_CLARIFICATION") {
+      if (colStatus !== -1) sheet.getRange(targetRow, colStatus + 1).setValue(newStatus);
+      if (colReviewDate !== -1) sheet.getRange(targetRow, colReviewDate + 1).setValue(new Date());
+      if (colReviewedBy !== -1) sheet.getRange(targetRow, colReviewedBy + 1).setValue(session.email);
+    }
     
     if (newStatus === "REJECTED") {
       if (!reason) throw new Error("Rejection reason is required.");
@@ -794,14 +1150,12 @@ function updateApplicationStatus(payload) {
       }
     } 
     else if (newStatus === "NEEDS_CLARIFICATION") {
-      if (!reason || !docType) throw new Error("Document type and reason required for updates.");
-      if (colReason !== -1) sheet.getRange(targetRow, colReason + 1).setValue(`Update requested for: ${docType}. Reason: ${reason}`);
-      
       const token = Utilities.getUuid();
       const expiryTime = new Date(Date.now() + CONFIG.DOC_UPDATE_EXPIRY_HOURS * 60 * 60 * 1000);
       const formattedExpiry = formatExactDateTime(expiryTime);
       
-      PropertiesService.getScriptProperties().setProperty('DOC_UPDATE_' + token, JSON.stringify({
+      const tokenKey = 'DOC_UPDATE_' + token;
+      PropertiesService.getScriptProperties().setProperty(tokenKey, JSON.stringify({
         appId: appId,
         email: applicantEmail,
         docType: docType,
@@ -812,13 +1166,20 @@ function updateApplicationStatus(payload) {
       
       const updateLink = `${CONFIG.FRONTEND_UPDATE_URL}?token=${token}`;
       
-      if (applicantEmail) {
-        sendSecureEmail(
-          applicantEmail,
-          "LSU Membership Application - Document Update Required (24-Hour Expiry)",
-          `Dear ${applicantName},\n\nYour LSU membership application (${appId}) has been reviewed.\n\nWe need you to update the following document before your application can be processed:\n\nDocument Required: ${docType}\nReason / Instructions: ${reason}\n\nPlease click the secure link below to upload your replacement document:\n${updateLink}\n\nIMPORTANT: This link will expire in 24 hours on ${formattedExpiry}.\n\nYour application will remain under review until the requested document is received.\n\nRegards,\nLiberian Students Union in Odisha`
-        );
+      const emailSent = sendSecureEmail(
+        applicantEmail,
+        "LSU Membership Application - Document Update Required (24-Hour Expiry)",
+        `Dear ${applicantName},\n\nYour LSU membership application (${appId}) has been reviewed.\n\nWe need you to update the following document before your application can be processed:\n\nDocument Required: ${docType}\nReason / Instructions: ${reason}\n\nPlease click the secure link below to upload your replacement document:\n${updateLink}\n\nIMPORTANT: This link will expire in 24 hours on ${formattedExpiry}.\n\nYour application will remain under review until the requested document is received.\n\nRegards,\nLiberian Students Union in Odisha`
+      );
+      if (!emailSent) {
+        PropertiesService.getScriptProperties().deleteProperty(tokenKey);
+        throw new Error("The document update request could not be emailed. Please check the email service and try again.");
       }
+
+      if (colStatus !== -1) sheet.getRange(targetRow, colStatus + 1).setValue(newStatus);
+      if (colReviewDate !== -1) sheet.getRange(targetRow, colReviewDate + 1).setValue(new Date());
+      if (colReviewedBy !== -1) sheet.getRange(targetRow, colReviewedBy + 1).setValue(session.email);
+      if (colReason !== -1) sheet.getRange(targetRow, colReason + 1).setValue(`Update requested for: ${docType}. Reason: ${reason}`);
     }
     else if (newStatus === "VERIFICATION_PENDING") {
       const code = "LSU26-" + Math.floor(100000 + Math.random() * 900000);
@@ -854,7 +1215,7 @@ function updateApplicationStatus(payload) {
       }
     }
     
-    return { success: true, message: "Status updated successfully." };
+    return auditResult_({ success: true, message: "Status updated successfully." }, finishAdminAudit_(auditEntry, "SUCCESS", newStatus));
   } finally {
     lock.releaseLock();
   }
@@ -915,7 +1276,8 @@ function resendUploadLink(payload) {
   const expiryTime = new Date(Date.now() + CONFIG.DOC_UPDATE_EXPIRY_HOURS * 60 * 60 * 1000);
   const formattedExpiry = formatExactDateTime(expiryTime);
   
-  PropertiesService.getScriptProperties().setProperty('DOC_UPDATE_' + token, JSON.stringify({
+  const tokenKey = 'DOC_UPDATE_' + token;
+  PropertiesService.getScriptProperties().setProperty(tokenKey, JSON.stringify({
     appId: appId,
     email: applicantEmail,
     docType: docType,
@@ -926,12 +1288,17 @@ function resendUploadLink(payload) {
   
   const updateLink = `${CONFIG.FRONTEND_UPDATE_URL}?token=${token}`;
   
-  sendSecureEmail(
+  const emailSent = sendSecureEmail(
     applicantEmail,
     "LSU Membership Application - New Document Update Link (24-Hour Expiry)",
     `Dear ${applicantName},\n\nA new secure document update link has been generated for your LSU membership application (${appId}).\n\nDocument Required: ${docType}\nReason / Instructions: ${reason}\n\nPlease click the link below to upload your document:\n${updateLink}\n\nIMPORTANT: This new link is valid for 24 hours and will expire on ${formattedExpiry}.\n\nRegards,\nLiberian Students Union in Odisha`
   );
+  if (!emailSent) {
+    PropertiesService.getScriptProperties().deleteProperty(tokenKey);
+    throw new Error("The document update link could not be emailed. Please check the email service and try again.");
+  }
   
+  auditAdminAction_(session, "membership_document_update_link_resent", appId, "SUCCESS", "New link issued");
   return { success: true, message: `New upload link generated and sent. Valid until ${formattedExpiry}.` };
 }
 
@@ -985,6 +1352,7 @@ function resendVerificationCode(payload) {
     `Dear ${applicantName},\n\nA new verification code has been issued for your LSU membership application (${appId}).\n\nVerification Code:\n${newCode}\n\nIMPORTANT: This code is valid for 24 hours and will expire on ${formattedExpiry}.\n\nPlease reply directly to this email with the verification code above to complete your membership confirmation.\n\nRegards,\nLiberian Students Union in Odisha`
   );
   
+  auditAdminAction_(session, "membership_verification_code_resent", appId, "SUCCESS", "New code issued");
   return { success: true, message: `New verification code sent. Valid until ${formattedExpiry}.` };
 }
 
@@ -1072,9 +1440,9 @@ function submitDocumentUpdate(payload) {
   
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    lock.waitLock(30000);
   } catch (e) {
-    throw new Error("Server busy. Please retry.");
+    throw publicError_("Server is busy. Please retry.");
   }
   
   try {
@@ -1162,9 +1530,8 @@ function submitDocumentUpdate(payload) {
  * EMAIL REPLY VERIFICATION (SERVER-SIDE 24-HOUR EXPIRATION)
  *******************************************************/
 function processVerificationReplies(payload) {
-  if (payload && payload.sessionToken) {
-    requireAdministratorSession(payload.sessionToken);
-  }
+  const session = requireAdministratorPermission_(payload && payload.sessionToken, "membership");
+  const auditEntry = beginAdminAudit_(session, "membership_verification_replies_processed", "", "Processing Gmail replies");
   
   const threads = GmailApp.search('is:unread subject:"Re: LSU Membership Application - Verification Required"');
   let processedCount = 0;
@@ -1232,7 +1599,7 @@ function processVerificationReplies(payload) {
     }
   }
   
-  return { success: true, message: `Processed ${processedCount} verifications.` };
+  return auditResult_({ success: true, message: `Processed ${processedCount} verifications.` }, finishAdminAudit_(auditEntry, "SUCCESS", "Processed count: " + processedCount));
 }
 
 /*******************************************************
@@ -1254,9 +1621,9 @@ function sendOTP(email, turnstileToken) {
   
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    lock.waitLock(30000);
   } catch (e) {
-    throw new Error("Server busy. Please retry.");
+    throw publicError_("Server is busy. Please retry.");
   }
   
   try {
@@ -1287,9 +1654,9 @@ function verifyOTP(email, enteredOTP) {
   
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    lock.waitLock(30000);
   } catch (e) {
-    throw new Error("Server busy. Please retry.");
+    throw publicError_("Server is busy. Please retry.");
   }
   
   try {
@@ -1435,9 +1802,9 @@ function submitApplication(payload) {
   
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    lock.waitLock(30000);
   } catch (e) {
-    throw new Error("Database is currently handling multiple applications. Please click submit again.");
+    throw publicError_("The server is busy processing other applications. Please click submit again.");
   }
   
   try {
@@ -1785,9 +2152,9 @@ function submitDuePayment(payload) {
 
   const lock = LockService.getScriptLock();
   try {
-    lock.waitLock(10000);
+    lock.waitLock(30000);
   } catch (e) {
-    throw new Error("Payment system is busy processing another transaction. Please retry in a moment.");
+    throw publicError_("Payment system is busy. Please retry in a moment.");
   }
 
   try {
@@ -1840,20 +2207,25 @@ function logoutDueMember(sessionToken) {
 function paymentAdminSendOTP(email) {
   email = extractEmail(email);
   const access = checkAdministratorAccess(email);
-  if (!access.authorized) return { success: false, message: "You are not authorized to access the payment administration portal." };
+  if (!access.authorized || !ADMIN_PERMISSIONS_[access.role].includes("finance")) return { success: false, message: "You are not authorized to access the payment administration portal." };
+  if (!allowAdministratorOtpRequest_(email)) return { success: false, message: "Too many verification requests. Please try again later." };
 
-  const otp = "FIN" + Math.floor(100 + Math.random() * 900) + "LSU";
+  const otp = "FIN" + administratorCode_().slice(3, 6) + "LSU";
+  const createdAt = Date.now();
   CacheService.getScriptCache().put(
     LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_OTP_PREFIX + email,
     JSON.stringify({ otp, expiresAt: new Date(Date.now() + LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES * 60000).toISOString(), attempts: 0 }),
     LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES * 60
   );
 
-  sendSecureEmail(
+  if (!sendSecureEmail(
     email,
     "LSU Finance Payment Administration Verification Code",
     `Dear ${access.name || "Administrator"},\n\nYour payment administration verification code is:\n\n${otp}\n\nThis code expires in ${LSU_PAYMENT_CONFIG.OTP_EXPIRY_MINUTES} minutes.\n\nRegards,\nLiberian Students Union in Odisha`
-  );
+  )) {
+    CacheService.getScriptCache().remove(LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_OTP_PREFIX + email);
+    return { success: false, message: "Unable to send the verification code. Please try again later." };
+  }
 
   return { success: true, message: "Payment administration verification code sent." };
 }
@@ -1862,7 +2234,7 @@ function paymentAdminVerifyOTP(email, enteredOTP) {
   email = extractEmail(email);
   enteredOTP = String(enteredOTP || "").trim().toUpperCase();
   const access = checkAdministratorAccess(email);
-  if (!access.authorized) return { success: false, message: "Unauthorized account." };
+  if (!access.authorized || !ADMIN_PERMISSIONS_[access.role].includes("finance")) return { success: false, message: "Unauthorized account." };
 
   const key = LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_OTP_PREFIX + email;
   const raw = CacheService.getScriptCache().get(key);
@@ -1881,7 +2253,7 @@ function paymentAdminVerifyOTP(email, enteredOTP) {
   const token = Utilities.getUuid();
   CacheService.getScriptCache().put(
     LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + token,
-    JSON.stringify({ email, role: access.role, name: access.name }),
+    JSON.stringify({ email, role: access.role, name: access.name, issuedAt: createdAt, createdAt }),
     LSU_PAYMENT_CONFIG.SESSION_TTL_SECONDS
   );
   CacheService.getScriptCache().remove(key);
@@ -1893,14 +2265,24 @@ function lsuRequirePaymentAdmin_(token) {
   token = String(token || "").trim();
   const key = LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + token;
   const raw = CacheService.getScriptCache().get(key);
-  if (!raw) throw new Error("Payment administration session expired. Please log in again.");
+  if (!raw) throw new Error("Authorization denied.");
 
   const session = JSON.parse(raw);
+  const createdAt = Number(session.createdAt || 0);
+  if (!createdAt || Date.now() - createdAt >= ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000) {
+    CacheService.getScriptCache().remove(key);
+    throw new Error("Authorization denied.");
+  }
+  const revokedAt = Number(CacheService.getScriptCache().get("LSU_ADMIN_REVOKE_" + extractEmail(session.email)) || 0);
   const access = checkAdministratorAccess(session.email);
-  if (!access.authorized || access.role !== session.role) throw new Error("Administrator access revoked.");
-
-  CacheService.getScriptCache().put(key, raw, LSU_PAYMENT_CONFIG.SESSION_TTL_SECONDS);
-  return session;
+  if ((revokedAt && Number(session.issuedAt || 0) <= revokedAt) || !access.authorized || access.role !== session.role || !ADMIN_PERMISSIONS_[access.role].includes("finance")) {
+    CacheService.getScriptCache().remove(key);
+    throw new Error("Authorization denied.");
+  }
+  const fresh = { email: extractEmail(session.email), role: access.role, name: access.name, issuedAt: session.issuedAt, createdAt };
+  const idleTtl = Math.min(LSU_PAYMENT_CONFIG.SESSION_TTL_SECONDS, Math.max(1, Math.ceil((ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000 - (Date.now() - createdAt)) / 1000)));
+  CacheService.getScriptCache().put(key, JSON.stringify(fresh), idleTtl);
+  return fresh;
 }
 
 function getPendingDuePayments(sessionToken) {
@@ -2037,6 +2419,8 @@ function approveDuePayment(payload) {
     const storedTotal = Number(payment.data[4] || 0);
     if (Math.abs(expectedTotal - storedTotal) > 0.001) throw new Error("Payment total does not match its allocation amounts.");
 
+    const auditEntry = beginAdminAudit_(session, "financial_payment_approved", paymentId, "Approval requested");
+
     const receiptId = lsuReceiptId_(paymentId);
     const approvedDate = new Date();
 
@@ -2082,7 +2466,7 @@ function approveDuePayment(payload) {
       }
     });
 
-    return { success: true, message: "Payment approved and receipts sent.", paymentId, receiptId, status: "PAID / VERIFIED" };
+    return auditResult_({ success: true, message: "Payment approved and receipts sent.", paymentId, receiptId, status: "PAID / VERIFIED" }, finishAdminAudit_(auditEntry, "SUCCESS", "Receipt issued"));
   } finally {
     lock.releaseLock();
   }
@@ -2108,6 +2492,8 @@ function rejectDuePayment(payload) {
     const allocations = lsuAllocationRows_(paymentId);
     if (String(payment.data[9]) !== "PENDING VERIFICATION") throw new Error("This payment has already been processed.");
 
+    const auditEntry = beginAdminAudit_(session, "financial_payment_rejected", paymentId, "Rejection requested");
+
     payment.sheet.getRange(payment.row, 10).setValue("REJECTED");
     payment.sheet.getRange(payment.row, 12, 1, 4).setValues([[
       "", session.email, "", reason
@@ -2120,14 +2506,20 @@ function rejectDuePayment(payload) {
       `Your LSU dues payment (${paymentId}) was rejected.\n\nReason:\n${reason}\n\nPlease contact the Liberian Students Union in Odisha if you need assistance.`
     );
 
-    return { success: true, message: "Payment rejected.", paymentId, status: "REJECTED" };
+    return auditResult_({ success: true, message: "Payment rejected.", paymentId, status: "REJECTED" }, finishAdminAudit_(auditEntry, "SUCCESS", "Rejection reason recorded"));
   } finally {
     lock.releaseLock();
   }
 }
 
 function logoutPaymentAdmin(sessionToken) {
-  CacheService.getScriptCache().remove(LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + String(sessionToken || "").trim());
+  const cache = CacheService.getScriptCache();
+  const token = String(sessionToken || "").trim();
+  const raw = cache.get(LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + token);
+  if (raw) {
+    try { auditAdminAction_(JSON.parse(raw), "administrator_logout", "", "SUCCESS", "Financial session revoked"); } catch (e) { }
+  }
+  cache.remove(LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + token);
   return { success: true };
 }
 
@@ -2135,13 +2527,14 @@ function logoutPaymentAdmin(sessionToken) {
  * MAIN WEB APP ENDPOINT
  *******************************************************/
 function doPost(e) {
+  let action = "unknown";
   try {
     if (!e || !e.postData || !e.postData.contents) {
       return jsonResponse({ success: false, message: "Empty request payload." });
     }
     
     const payload = JSON.parse(e.postData.contents);
-    const action = String(payload.action || "").trim();
+    action = String(payload.action || "").trim();
 
     // Membership Registration Routes
     if (action === "sendOTP") return jsonResponse(sendOTP(payload.email, payload.turnstileToken));
@@ -2149,7 +2542,7 @@ function doPost(e) {
     if (action === "submitApplication") return jsonResponse(submitApplication(payload));
     
     // Administrator Authentication Routes
-    if (action === "checkAdministratorAccess") return jsonResponse(checkAdministratorAccess(payload.email));
+    if (action === "checkAdministratorAccess") return jsonResponse({ success: true, message: "Use the administrator verification code flow to continue." });
     if (action === "sendAdministratorOTP") return jsonResponse(sendAdministratorOTP(payload.email));
     if (action === "verifyAdministratorOTP") return jsonResponse(verifyAdministratorOTP(payload.email, payload.otp));
     if (action === "logoutAdministrator") return jsonResponse(logoutAdministrator(payload.sessionToken));
@@ -2160,12 +2553,14 @@ function doPost(e) {
     if (action === "resendUploadLink" || action === "resendDocumentUpdateLink") return jsonResponse(resendUploadLink(payload));
     if (action === "resendVerificationCode") return jsonResponse(resendVerificationCode(payload));
     if (action === "getAdministrators") return jsonResponse(getAdministrators(payload.sessionToken));
-    if (action === "addAdministrator") return jsonResponse(addAdministrator(payload.sessionToken, payload.newEmail, payload.newName));
-    if (action === "deactivateAdministrator") return jsonResponse(deactivateAdministrator(payload.sessionToken, payload.targetEmail));
-    if (action === "reactivateAdministrator") return jsonResponse(reactivateAdministrator(payload.sessionToken, payload.targetEmail));
+    if (action === "getAdministratorAuditLog") return jsonResponse(getAdministratorAuditLog(payload.sessionToken));
+    if (action === "addAdministrator") return jsonResponse(withAdministratorManagementLock_(() => addAdministrator(payload.sessionToken, payload.newEmail, payload.newName, payload.role)));
+    if (action === "deactivateAdministrator") return jsonResponse(withAdministratorManagementLock_(() => deactivateAdministrator(payload.sessionToken, payload.targetEmail)));
+    if (action === "reactivateAdministrator") return jsonResponse(withAdministratorManagementLock_(() => reactivateAdministrator(payload.sessionToken, payload.targetEmail)));
+    if (action === "changeAdministratorRole") return jsonResponse(withAdministratorManagementLock_(() => changeAdministratorRole(payload.sessionToken, payload.targetEmail, payload.role)));
     if (action === "processVerificationReplies") return jsonResponse(processVerificationReplies(payload));
     if (action === "cleanupExpiredTokens") {
-      requireAdministratorSession(payload.sessionToken);
+      requireAdministratorPermission_(payload.sessionToken, "audit");
       cleanupExpiredTokens_();
       return jsonResponse({ success: true, message: "Expired tokens cleaned up successfully." });
     }
@@ -2187,10 +2582,15 @@ function doPost(e) {
     if (action === "rejectDuePayment") return jsonResponse(rejectDuePayment(payload));
     if (action === "logoutPaymentAdmin") return jsonResponse(logoutPaymentAdmin(payload.sessionToken));
 
-    return jsonResponse({ success: false, message: "Invalid action: " + action });
+    return jsonResponse({ success: false, message: "Invalid action." });
   } catch (error) {
-    Logger.log("doPost error: " + error.toString());
-    return jsonResponse({ success: false, message: error.message || error.toString() });
+    // Do not log exception text: Apps Script/provider errors can contain request data or internals.
+    Logger.log("doPost failed for action " + String(action).replace(/[^a-zA-Z0-9_]/g, "").slice(0, 60) + " (" + String(error && error.name || "Error") + ").");
+    const candidate = error && typeof error.publicMessage === "string" ? error.publicMessage : String(error && error.message || "");
+    const message = error && typeof error.publicMessage === "string" || SAFE_PUBLIC_ERROR_MESSAGES_.has(candidate)
+      ? candidate
+      : "Request could not be completed. Please check the submitted information or try again later.";
+    return jsonResponse({ success: false, message });
   }
 }
 

@@ -146,6 +146,7 @@ function setupEventListeners() {
         document.getElementById('modal-add-admin').classList.add('active');
     });
     document.getElementById('btn-submit-add-admin').addEventListener('click', handleAddAdmin);
+    document.getElementById('btn-refresh-admin-audit').addEventListener('click', loadAdministratorAuditLog);
 
     // Update Request Modal
     document.getElementById('btn-submit-update-request').addEventListener('click', handleSubmitUpdateRequest);
@@ -300,35 +301,41 @@ async function handleVerifyOTP() {
 function showDashboard() {
     loginView.classList.remove('active');
     dashboardView.classList.add('active');
-
-    // Update Role Illustration Badge in upper RH corner
-    const roleBadgeText = document.getElementById('current-admin-role-display');
-    const badgeContainer = document.getElementById('admin-role-badge');
-    const isChief = (currentAdminRole === 'CHIEF_ADMINISTRATOR' || currentAdminRole === 'CHIEF_ADMIN');
-
-    if (roleBadgeText) {
-        roleBadgeText.textContent = isChief ? 'Chief Administrator' : 'Co-Administrator';
-    }
-
-    if (badgeContainer) {
-        badgeContainer.className = 'admin-role-badge-wrapper ' + (isChief ? 'chief-badge' : 'coadmin-badge');
-        const badgeIcon = badgeContainer.querySelector('i');
-        if (badgeIcon) {
-            badgeIcon.className = isChief ? 'fa-solid fa-shield-halved' : 'fa-solid fa-user-shield';
-        }
-    }
-
-    if (isChief) {
-        document.querySelectorAll('.chief-only').forEach(el => el.style.display = '');
-    } else {
-        document.querySelectorAll('.chief-only').forEach(el => el.style.display = 'none');
-    }
-
+    document.querySelectorAll('.chief-only').forEach(el => el.style.display = 'none');
     loadDashboardData();
 }
 
+function applyServerAdministratorRole(admin) {
+    currentAdminRole = admin.role;
+    currentAdminEmail = admin.email;
+    currentAdminName = admin.name;
+    sessionStorage.setItem('adminRole', admin.role);
+    sessionStorage.setItem('adminEmail', admin.email);
+    sessionStorage.setItem('adminName', admin.name);
+    const isChief = admin.role === 'CHIEF_ADMINISTRATOR';
+    const roleBadgeText = document.getElementById('current-admin-role-display');
+    const badgeContainer = document.getElementById('admin-role-badge');
+    const roleLabels = {
+        CHIEF_ADMINISTRATOR: 'Chief Administrator',
+        MEMBERSHIP_CO_ADMINISTRATOR: 'Membership Co-Administrator'
+    };
+    if (roleBadgeText) roleBadgeText.textContent = roleLabels[admin.role] || 'Administrator';
+    if (badgeContainer) {
+        badgeContainer.className = 'admin-role-badge-wrapper ' + (isChief ? 'chief-badge' : 'coadmin-badge');
+        const badgeIcon = badgeContainer.querySelector('i');
+        if (badgeIcon) badgeIcon.className = isChief ? 'fa-solid fa-shield-halved' : 'fa-solid fa-user-shield';
+    }
+    document.querySelectorAll('.chief-only').forEach(el => el.style.display = isChief ? '' : 'none');
+}
+
 async function loadDashboardData() {
-    document.getElementById('apps-tbody').innerHTML = '<tr><td colspan="6" style="text-align: center;">Loading applications...</td></tr>';
+    const loadingRow = document.createElement('tr');
+    const loadingCell = document.createElement('td');
+    loadingCell.colSpan = 6;
+    loadingCell.style.textAlign = 'center';
+    loadingCell.textContent = 'Loading applications...';
+    loadingRow.appendChild(loadingCell);
+    document.getElementById('apps-tbody').replaceChildren(loadingRow);
 
     try {
         const res = await sendBackendRequest({
@@ -337,6 +344,7 @@ async function loadDashboardData() {
         });
 
         if (res.success) {
+            if (res.administrator) applyServerAdministratorRole(res.administrator);
             cachedApplications = (res.applications || []).map(row => {
                 // Map the spreadsheet headers to frontend expected properties
                 return {
@@ -367,12 +375,20 @@ async function loadDashboardData() {
 
             if (currentAdminRole === 'CHIEF_ADMINISTRATOR' || currentAdminRole === 'CHIEF_ADMIN') {
                 loadAdministrators();
+                loadAdministratorAuditLog();
             }
         } else {
-            alert('Error loading dashboard: ' + res.message);
+            sessionStorage.clear();
+            currentSessionToken = null;
+            currentAdminEmail = null;
+            currentAdminRole = null;
+            dashboardView.classList.remove('active');
+            loginView.classList.add('active');
+            document.getElementById('login-error').textContent = res.message || 'Your administrator session is no longer active. Please sign in again.';
         }
     } catch (err) {
-        alert('Network error loading dashboard.');
+        document.querySelectorAll('.chief-only').forEach(el => el.style.display = 'none');
+        alert('Unable to verify your administrator session. Please retry.');
     }
 }
 
@@ -463,173 +479,126 @@ function renderStats(stats) {
     processUniSource(cs.universities);
     processUniSource(al.universities);
 
-    // Render University Cards
-    let uniCardsHtml = '';
+    const makeElement = (tag, className, text) => {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== undefined) element.textContent = String(text);
+        return element;
+    };
+    const makeIcon = (className, color) => {
+        const icon = makeElement('i', className);
+        if (color) icon.style.color = color;
+        return icon;
+    };
+    const makeSection = (title, iconClass) => {
+        const section = makeElement('section', 'stats-category-section');
+        const header = makeElement('div', 'stats-category-header');
+        header.appendChild(makeIcon(iconClass));
+        header.appendChild(makeElement('h3', '', title));
+        section.appendChild(header);
+        return section;
+    };
+    const makeMetric = (value, label, iconClass, highlight) => {
+        const card = makeElement('div', `metric-card${highlight ? ' highlight' : ''}`);
+        card.appendChild(makeElement('div', 'metric-value', value));
+        const labelElement = makeElement('div', 'metric-label');
+        if (iconClass) {
+            const color = iconClass.includes('mars') ? '#2563eb' : '#db2777';
+            labelElement.appendChild(makeIcon(iconClass, color));
+            labelElement.appendChild(document.createTextNode(' '));
+        }
+        labelElement.appendChild(document.createTextNode(label));
+        card.appendChild(labelElement);
+        return card;
+    };
+    const appendMetrics = (section, metrics) => {
+        const grid = makeElement('div', 'metrics-grid');
+        metrics.forEach(metric => grid.appendChild(makeMetric(...metric)));
+        section.appendChild(grid);
+    };
+    const makeDegreeMetric = (title, degree, total) => {
+        const item = makeElement('div', 'uni-degree-item');
+        item.appendChild(makeElement('div', 'uni-degree-title', title));
+        const metrics = makeElement('div', 'uni-degree-metrics');
+        [
+            ['Total: ', formatVal(degree.total, total)],
+            ['M: ', formatVal(degree.male, degree.total)],
+            ['F: ', formatVal(degree.female, degree.total)]
+        ].forEach(([label, value]) => {
+            const span = makeElement('span');
+            span.appendChild(document.createTextNode(label));
+            span.appendChild(makeElement('strong', '', value));
+            metrics.appendChild(span);
+        });
+        item.appendChild(metrics);
+        return item;
+    };
+
+    const universitySection = makeSection('University Statistics', 'fa-solid fa-building-columns');
+    const universityGrid = makeElement('div', 'university-cards-grid');
     for (const [initial, uData] of Object.entries(uniMap)) {
         const uTotal = uData.total || 0;
-        const uMale = uData.male || 0;
-        const uFemale = uData.female || 0;
+        const card = makeElement('div', 'university-stat-card');
+        const header = makeElement('div', 'uni-card-header');
+        header.appendChild(makeElement('span', 'uni-initials-badge', initial));
+        const totalBadge = makeElement('span', 'uni-total-badge');
+        totalBadge.appendChild(document.createTextNode('Total: '));
+        totalBadge.appendChild(makeElement('strong', '', formatVal(uTotal, grandTotal)));
+        header.appendChild(totalBadge);
+        card.appendChild(header);
 
-        uniCardsHtml += `
-            <div class="university-stat-card">
-                <div class="uni-card-header">
-                    <span class="uni-initials-badge">${initial}</span>
-                    <span class="uni-total-badge">Total: <strong>${formatVal(uTotal, grandTotal)}</strong></span>
-                </div>
-                <div class="uni-gender-row">
-                    <div class="uni-gender-pill">
-                        <span><i class="fa-solid fa-mars" style="color: #2563eb;"></i> Male</span>
-                        <strong>${formatVal(uMale, uTotal)}</strong>
-                    </div>
-                    <div class="uni-gender-pill">
-                        <span><i class="fa-solid fa-venus" style="color: #db2777;"></i> Female</span>
-                        <strong>${formatVal(uFemale, uTotal)}</strong>
-                    </div>
-                </div>
-                <div class="uni-degrees-list">
-                    <div class="uni-degree-item">
-                        <div class="uni-degree-title">Bachelor Degree</div>
-                        <div class="uni-degree-metrics">
-                            <span>Total: <strong>${formatVal(uData.bachelor.total, uTotal)}</strong></span>
-                            <span>M: <strong>${formatVal(uData.bachelor.male, uData.bachelor.total)}</strong></span>
-                            <span>F: <strong>${formatVal(uData.bachelor.female, uData.bachelor.total)}</strong></span>
-                        </div>
-                    </div>
-                    <div class="uni-degree-item">
-                        <div class="uni-degree-title">Master's Degree</div>
-                        <div class="uni-degree-metrics">
-                            <span>Total: <strong>${formatVal(uData.master.total, uTotal)}</strong></span>
-                            <span>M: <strong>${formatVal(uData.master.male, uData.master.total)}</strong></span>
-                            <span>F: <strong>${formatVal(uData.master.female, uData.master.total)}</strong></span>
-                        </div>
-                    </div>
-                    <div class="uni-degree-item">
-                        <div class="uni-degree-title">PhD Degree</div>
-                        <div class="uni-degree-metrics">
-                            <span>Total: <strong>${formatVal(uData.phd.total, uTotal)}</strong></span>
-                            <span>M: <strong>${formatVal(uData.phd.male, uData.phd.total)}</strong></span>
-                            <span>F: <strong>${formatVal(uData.phd.female, uData.phd.total)}</strong></span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        `;
+        const genderRow = makeElement('div', 'uni-gender-row');
+        [['fa-solid fa-mars', '#2563eb', 'Male', uData.male], ['fa-solid fa-venus', '#db2777', 'Female', uData.female]].forEach(([iconClass, color, label, value]) => {
+            const pill = makeElement('div', 'uni-gender-pill');
+            const labelElement = makeElement('span');
+            labelElement.appendChild(makeIcon(iconClass, color));
+            labelElement.appendChild(document.createTextNode(` ${label}`));
+            pill.appendChild(labelElement);
+            pill.appendChild(makeElement('strong', '', formatVal(value || 0, uTotal)));
+            genderRow.appendChild(pill);
+        });
+        card.appendChild(genderRow);
+
+        const degrees = makeElement('div', 'uni-degrees-list');
+        degrees.appendChild(makeDegreeMetric('Bachelor Degree', uData.bachelor, uTotal));
+        degrees.appendChild(makeDegreeMetric("Master's Degree", uData.master, uTotal));
+        degrees.appendChild(makeDegreeMetric('PhD Degree', uData.phd, uTotal));
+        card.appendChild(degrees);
+        universityGrid.appendChild(card);
     }
+    universitySection.appendChild(universityGrid);
 
-    container.innerHTML = `
-        <!-- CATEGORY 1: UNIVERSITY STATISTICS -->
-        <section class="stats-category-section">
-            <div class="stats-category-header">
-                <i class="fa-solid fa-building-columns"></i>
-                <h3>University Statistics</h3>
-            </div>
-            <div class="university-cards-grid">
-                ${uniCardsHtml}
-            </div>
-        </section>
+    const currentSection = makeSection('Current Student Statistics', 'fa-solid fa-user-graduate');
+    appendMetrics(currentSection, [
+        [formatVal(cs.total, grandTotal), 'Total Current Students', null, true],
+        [formatVal(cs.male, cs.total), 'Male Students', 'fa-solid fa-mars'],
+        [formatVal(cs.female, cs.total), 'Female Students', 'fa-solid fa-venus'],
+        [formatVal(csBachelor, cs.total), 'Bachelor Candidates'],
+        [formatVal(csMasters, cs.total), "Master's Candidates"],
+        [formatVal(csPhd, cs.total), 'PhD Candidates']
+    ]);
 
-        <!-- CATEGORY 2: CURRENT STUDENT STATISTICS -->
-        <section class="stats-category-section">
-            <div class="stats-category-header">
-                <i class="fa-solid fa-user-graduate"></i>
-                <h3>Current Student Statistics</h3>
-            </div>
-            <div class="metrics-grid">
-                <div class="metric-card highlight">
-                    <div class="metric-value">${formatVal(cs.total, grandTotal)}</div>
-                    <div class="metric-label">Total Current Students</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(cs.male, cs.total)}</div>
-                    <div class="metric-label"><i class="fa-solid fa-mars" style="color: #2563eb;"></i> Male Students</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(cs.female, cs.total)}</div>
-                    <div class="metric-label"><i class="fa-solid fa-venus" style="color: #db2777;"></i> Female Students</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(csBachelor, cs.total)}</div>
-                    <div class="metric-label">Bachelor Candidates</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(csMasters, cs.total)}</div>
-                    <div class="metric-label">Master's Candidates</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(csPhd, cs.total)}</div>
-                    <div class="metric-label">PhD Candidates</div>
-                </div>
-            </div>
-        </section>
+    const alumniSection = makeSection('Alumni Statistics', 'fa-solid fa-graduation-cap');
+    appendMetrics(alumniSection, [
+        [formatVal(al.total, grandTotal), 'Total Alumni', null, true],
+        [formatVal(al.male, al.total), 'Male Alumni', 'fa-solid fa-mars'],
+        [formatVal(al.female, al.total), 'Female Alumni', 'fa-solid fa-venus'],
+        [formatVal(alBachelor, al.total), 'Bachelor Degrees'],
+        [formatVal(alMasters, al.total), "Master's Degrees"],
+        [formatVal(alPhd, al.total), 'PhD Degrees']
+    ]);
 
-        <!-- CATEGORY 3: ALUMNI STATISTICS -->
-        <section class="stats-category-section">
-            <div class="stats-category-header">
-                <i class="fa-solid fa-graduation-cap"></i>
-                <h3>Alumni Statistics</h3>
-            </div>
-            <div class="metrics-grid">
-                <div class="metric-card highlight">
-                    <div class="metric-value">${formatVal(al.total, grandTotal)}</div>
-                    <div class="metric-label">Total Alumni</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(al.male, al.total)}</div>
-                    <div class="metric-label"><i class="fa-solid fa-mars" style="color: #2563eb;"></i> Male Alumni</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(al.female, al.total)}</div>
-                    <div class="metric-label"><i class="fa-solid fa-venus" style="color: #db2777;"></i> Female Alumni</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(alBachelor, al.total)}</div>
-                    <div class="metric-label">Bachelor Degrees</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(alMasters, al.total)}</div>
-                    <div class="metric-label">Master's Degrees</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(alPhd, al.total)}</div>
-                    <div class="metric-label">PhD Degrees</div>
-                </div>
-            </div>
-        </section>
+    const overallSection = makeSection('Overall Database Statistics', 'fa-solid fa-chart-pie');
+    appendMetrics(overallSection, [
+        [mode === 'PERCENTAGE' ? '100%' : grandTotal.toLocaleString(), 'Total Database Members', null, true],
+        [formatVal(grandMale, grandTotal), 'Overall Male', 'fa-solid fa-mars'],
+        [formatVal(grandFemale, grandTotal), 'Overall Female', 'fa-solid fa-venus'],
+        [formatVal(grandBachelor, grandTotal), 'Overall Bachelor'],
+        [formatVal(grandMasters, grandTotal), "Overall Master's"],
+        [formatVal(grandPhd, grandTotal), 'Overall PhD']
+    ]);
 
-        <!-- CATEGORY 4: OVERALL DATABASE STATISTICS -->
-        <section class="stats-category-section">
-            <div class="stats-category-header">
-                <i class="fa-solid fa-chart-pie"></i>
-                <h3>Overall Database Statistics</h3>
-            </div>
-            <div class="metrics-grid">
-                <div class="metric-card highlight">
-                    <div class="metric-value">${mode === 'PERCENTAGE' ? '100%' : grandTotal.toLocaleString()}</div>
-                    <div class="metric-label">Total Database Members</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(grandMale, grandTotal)}</div>
-                    <div class="metric-label"><i class="fa-solid fa-mars" style="color: #2563eb;"></i> Overall Male</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(grandFemale, grandTotal)}</div>
-                    <div class="metric-label"><i class="fa-solid fa-venus" style="color: #db2777;"></i> Overall Female</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(grandBachelor, grandTotal)}</div>
-                    <div class="metric-label">Overall Bachelor</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(grandMasters, grandTotal)}</div>
-                    <div class="metric-label">Overall Master's</div>
-                </div>
-                <div class="metric-card">
-                    <div class="metric-value">${formatVal(grandPhd, grandTotal)}</div>
-                    <div class="metric-label">Overall PhD</div>
-                </div>
-            </div>
-        </section>
-    `;
+    container.replaceChildren(universitySection, currentSection, alumniSection, overallSection);
 }
 
 function getStatusClass(status) {
@@ -647,7 +616,7 @@ function renderApplications() {
     const searchTerm = document.getElementById('search-apps').value.toLowerCase();
     const statusFilter = document.getElementById('filter-status').value;
 
-    tbody.innerHTML = '';
+    tbody.replaceChildren();
 
     const filtered = cachedApplications.filter(app => {
         const matchesSearch = (app.name || '').toLowerCase().includes(searchTerm) ||
@@ -665,20 +634,41 @@ function renderApplications() {
     });
 
     if (filtered.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No applications found.</td></tr>';
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 6;
+        cell.style.textAlign = 'center';
+        cell.textContent = 'No applications found.';
+        row.appendChild(cell);
+        tbody.appendChild(row);
         return;
     }
 
     filtered.forEach(app => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${app.id || 'N/A'}</td>
-            <td>${app.name}</td>
-            <td>${app.type}</td>
-            <td><span class="status-badge ${getStatusClass(app.status)}">${app.status || 'UNKNOWN'}</span></td>
-            <td>${app.date || ''}</td>
-            <td><button class="secondary-btn" onclick="openAppDetail('${app.id}')">View</button></td>
-        `;
+        [app.id || 'N/A', app.name || '', app.type || ''].forEach(value => {
+            const cell = document.createElement('td');
+            cell.textContent = String(value);
+            tr.appendChild(cell);
+        });
+        const statusCell = document.createElement('td');
+        const statusBadge = document.createElement('span');
+        statusBadge.className = `status-badge ${getStatusClass(app.status)}`;
+        statusBadge.textContent = app.status || 'UNKNOWN';
+        statusCell.appendChild(statusBadge);
+        tr.appendChild(statusCell);
+
+        const dateCell = document.createElement('td');
+        dateCell.textContent = app.date || '';
+        tr.appendChild(dateCell);
+
+        const actionCell = document.createElement('td');
+        const viewButton = document.createElement('button');
+        viewButton.className = 'secondary-btn';
+        viewButton.textContent = 'View';
+        viewButton.addEventListener('click', () => openAppDetail(app.id));
+        actionCell.appendChild(viewButton);
+        tr.appendChild(actionCell);
         tbody.appendChild(tr);
     });
 }
@@ -694,83 +684,134 @@ function openAppDetail(appId) {
     if (!app) return;
     currentAppInModal = app;
 
-    let contentHtml = `
-        <div class="detail-grid">
-            <div class="detail-item"><div class="detail-label">Application ID</div><div class="detail-value">${app.id}</div></div>
-            <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value"><span class="status-badge ${getStatusClass(app.status)}">${app.status}</span></div></div>
-            <div class="detail-item"><div class="detail-label">Membership Type</div><div class="detail-value">${app.type}</div></div>
-            <div class="detail-item"><div class="detail-label">Submission Date</div><div class="detail-value">${app.date}</div></div>
-        </div>
-        <h4>Personal Information</h4>
-        <div class="detail-grid">
-            <div class="detail-item"><div class="detail-label">Name</div><div class="detail-value">${app.name}</div></div>
-            <div class="detail-item"><div class="detail-label">Gender</div><div class="detail-value">${app.gender || 'N/A'}</div></div>
-            <div class="detail-item"><div class="detail-label">Date of Birth</div><div class="detail-value">${app.dob || 'N/A'}</div></div>
-            <div class="detail-item"><div class="detail-label">Passport Number</div><div class="detail-value">${app.passportNo || 'N/A'}</div></div>
-            <div class="detail-item"><div class="detail-label">Email</div><div class="detail-value">${app.email || 'N/A'}</div></div>
-            <div class="detail-item"><div class="detail-label">Mobile Number</div><div class="detail-value">${app.mobile || 'N/A'}</div></div>
-            <div class="detail-item"><div class="detail-label">WhatsApp Number</div><div class="detail-value">${app.whatsapp || 'N/A'}</div></div>
-        </div>
-        <h4>Academic Information</h4>
-        <div class="detail-grid">
-            <div class="detail-item"><div class="detail-label">University</div><div class="detail-value">${app.university || 'N/A'}</div></div>
-            <div class="detail-item"><div class="detail-label">Degree Type</div><div class="detail-value">${app.degree || 'N/A'}</div></div>
-            <div class="detail-item"><div class="detail-label">Study Period</div><div class="detail-value">${app.studyFrom} - ${app.studyTo}</div></div>
-        </div>
-        <h4>Documents</h4>
-        <div>
-    `;
+    const makeElement = (tag, className, text) => {
+        const element = document.createElement(tag);
+        if (className) element.className = className;
+        if (text !== undefined) element.textContent = String(text);
+        return element;
+    };
+    const content = document.getElementById('app-detail-content');
+    content.replaceChildren();
 
-    if (app.passportDocUrl) {
-        contentHtml += `<a href="${app.passportDocUrl}" target="_blank" class="document-link"><i class="fa-solid fa-file-pdf"></i> Passport Document</a>`;
+    const makeDetail = (label, value, status) => {
+        const item = makeElement('div', 'detail-item');
+        item.appendChild(makeElement('div', 'detail-label', label));
+        const valueElement = makeElement('div', 'detail-value');
+        if (status) {
+            const badge = makeElement('span', `status-badge ${getStatusClass(value)}`, value || '');
+            valueElement.appendChild(badge);
+        } else {
+            valueElement.textContent = value || 'N/A';
+        }
+        item.appendChild(valueElement);
+        return item;
+    };
+    const makeGrid = (details) => {
+        const grid = makeElement('div', 'detail-grid');
+        details.forEach(([label, value, status]) => grid.appendChild(makeDetail(label, value, status)));
+        return grid;
+    };
+
+    content.appendChild(makeGrid([
+        ['Application ID', app.id],
+        ['Status', app.status, true],
+        ['Membership Type', app.type],
+        ['Submission Date', app.date]
+    ]));
+    content.appendChild(makeElement('h4', '', 'Personal Information'));
+    content.appendChild(makeGrid([
+        ['Name', app.name],
+        ['Gender', app.gender],
+        ['Date of Birth', app.dob],
+        ['Passport Number', app.passportNo],
+        ['Email', app.email],
+        ['Mobile Number', app.mobile],
+        ['WhatsApp Number', app.whatsapp]
+    ]));
+    content.appendChild(makeElement('h4', '', 'Academic Information'));
+    content.appendChild(makeGrid([
+        ['University', app.university],
+        ['Degree Type', app.degree],
+        ['Study Period', `${app.studyFrom || ''} - ${app.studyTo || ''}`]
+    ]));
+    content.appendChild(makeElement('h4', '', 'Documents'));
+    const documents = makeElement('div');
+    const addDocumentLink = (url, label, iconClass) => {
+        if (!url) return;
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(String(url), window.location.origin);
+        } catch (error) {
+            return;
+        }
+        if (parsedUrl.protocol !== 'https:') return;
+
+        const link = makeElement('a', 'document-link');
+        link.href = parsedUrl.href;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        const icon = makeElement('i', iconClass);
+        icon.setAttribute('aria-hidden', 'true');
+        link.appendChild(icon);
+        link.appendChild(document.createTextNode(` ${label}`));
+        documents.appendChild(link);
+    };
+    addDocumentLink(app.passportDocUrl, 'Passport Document', 'fa-solid fa-file-pdf');
+    addDocumentLink(app.identificationPhotoUrl || app.passportPhotoUrl, 'Identification Photo', 'fa-solid fa-image');
+    if (app.type === 'CURRENT STUDENT') {
+        addDocumentLink(app.efroUrl, 'EFRO File', 'fa-solid fa-file-pdf');
     }
-    if (app.identificationPhotoUrl || app.passportPhotoUrl) {
-        contentHtml += `<a href="${app.identificationPhotoUrl || app.passportPhotoUrl}" target="_blank" class="document-link"><i class="fa-solid fa-image"></i> Identification Photo</a>`;
-    }
-    if (app.efroUrl && app.type === 'CURRENT STUDENT') {
-        contentHtml += `<a href="${app.efroUrl}" target="_blank" class="document-link"><i class="fa-solid fa-file-pdf"></i> EFRO File</a>`;
-    }
-    contentHtml += `</div>`;
+    content.appendChild(documents);
 
-    document.getElementById('app-detail-content').innerHTML = contentHtml;
+    const actions = document.getElementById('app-detail-actions');
+    actions.replaceChildren();
+    const makeActionButton = (label, className, handler, iconClass) => {
+        const button = makeElement('button', className, label);
+        button.type = 'button';
+        if (iconClass) {
+            button.textContent = '';
+            const icon = makeElement('i', iconClass);
+            icon.setAttribute('aria-hidden', 'true');
+            button.append(icon, document.createTextNode(` ${label}`));
+        }
+        button.addEventListener('click', handler);
+        actions.appendChild(button);
+        return button;
+    };
+    const addCloseButton = () => makeActionButton('Close', 'secondary-btn close-modal-btn', () => {
+        document.getElementById('modal-app-detail').classList.remove('active');
+    });
 
-    // Actions based on role and status
-    let actionsHtml = `<button class="secondary-btn close-modal-btn">Close</button>`;
-
-    const isOwnApp = (app.email.toLowerCase() === currentAdminEmail.toLowerCase());
-
+    const isOwnApp = String(app.email || '').toLowerCase() === String(currentAdminEmail || '').toLowerCase();
     if (!isOwnApp || currentAdminRole === 'CHIEF_ADMINISTRATOR') {
-        const s = (app.status || '').toUpperCase();
-
-        if (s === 'UNDER_REVIEW') {
-            actionsHtml = `
-                <button class="secondary-btn" onclick="openUpdateRequestModal()">Request Document Update</button>
-                <button class="secondary-btn" style="color: var(--danger); border-color: var(--danger);" onclick="openRejectModal()">Reject</button>
-                <button class="primary-btn" onclick="updateAppStatus('VERIFICATION_PENDING')">Approve & Send OTP</button>
-                <button class="secondary-btn close-modal-btn">Close</button>
-            `;
-        } else if (s === 'VERIFICATION_PENDING') {
-            actionsHtml = `
-                <button class="secondary-btn" style="color: var(--primary); border-color: var(--primary);" onclick="resendVerificationCode('${app.id}')"><i class="fa-solid fa-rotate-right"></i> Resend Verification Code</button>
-                <button class="secondary-btn close-modal-btn">Close</button>
-            `;
-        } else if (s === 'NEEDS_CLARIFICATION') {
-            actionsHtml = `
-                <button class="secondary-btn" style="color: var(--primary); border-color: var(--primary);" onclick="resendUploadLink('${app.id}')"><i class="fa-solid fa-rotate-right"></i> Resend Upload Link</button>
-                <button class="secondary-btn close-modal-btn">Close</button>
-            `;
+        const status = (app.status || '').toUpperCase();
+        if (status === 'UNDER_REVIEW') {
+            makeActionButton('Request Document Update', 'secondary-btn', openUpdateRequestModal);
+            const rejectButton = makeActionButton('Reject', 'secondary-btn', openRejectModal);
+            rejectButton.style.color = 'var(--danger)';
+            rejectButton.style.borderColor = 'var(--danger)';
+            makeActionButton('Approve & Send OTP', 'primary-btn', () => updateAppStatus('VERIFICATION_PENDING'));
+            addCloseButton();
+        } else if (status === 'VERIFICATION_PENDING') {
+            const resendButton = makeActionButton('Resend Verification Code', 'secondary-btn', () => resendVerificationCode(app.id), 'fa-solid fa-rotate-right');
+            resendButton.style.color = 'var(--primary)';
+            resendButton.style.borderColor = 'var(--primary)';
+            addCloseButton();
+        } else if (status === 'NEEDS_CLARIFICATION') {
+            const resendButton = makeActionButton('Resend Upload Link', 'secondary-btn', () => resendUploadLink(app.id), 'fa-solid fa-rotate-right');
+            resendButton.style.color = 'var(--primary)';
+            resendButton.style.borderColor = 'var(--primary)';
+            addCloseButton();
+        } else {
+            addCloseButton();
         }
     } else {
-        actionsHtml = `<span style="color: var(--text-light); margin-right: 15px;">You cannot approve your own application.</span>` + actionsHtml;
+        const restriction = makeElement('span', '', 'You cannot approve your own application.');
+        restriction.style.color = 'var(--text-light)';
+        restriction.style.marginRight = '15px';
+        actions.appendChild(restriction);
+        addCloseButton();
     }
-
-    document.getElementById('app-detail-actions').innerHTML = actionsHtml;
-
-    document.querySelectorAll('#app-detail-actions .close-modal-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            document.getElementById('modal-app-detail').classList.remove('active');
-        });
-    });
 
     document.getElementById('modal-app-detail').classList.add('active');
 }
@@ -866,13 +907,15 @@ function openUpdateRequestModal() {
     document.getElementById('update-doc-reason').value = '';
 
     const select = document.getElementById('update-doc-type');
-    if (currentAppInModal.type === 'ALUMNI') {
-        Array.from(select.options).forEach(opt => {
-            if (opt.value === 'EFRO File') opt.style.display = 'none';
-        });
-        if (select.value === 'EFRO File') select.value = 'Passport Document';
-    } else {
-        Array.from(select.options).forEach(opt => opt.style.display = '');
+    const membershipType = String(currentAppInModal?.type || '').trim().toUpperCase();
+    const isCurrentStudent = membershipType.includes('STUDENT');
+    const efroOption = Array.from(select.options).find(option => option.value === 'EFRO File');
+    if (efroOption) {
+        efroOption.disabled = !isCurrentStudent;
+        efroOption.hidden = !isCurrentStudent;
+    }
+    if (!isCurrentStudent && select.value === 'EFRO File') {
+        select.value = 'Passport Document';
     }
 
     document.getElementById('modal-request-update').classList.add('active');
@@ -931,14 +974,59 @@ async function loadAdministrators() {
     }
 }
 
+async function loadAdministratorAuditLog() {
+    const tbody = document.getElementById('admin-audit-tbody');
+    if (!tbody) return;
+    try {
+        const res = await sendBackendRequest({
+            action: 'getAdministratorAuditLog',
+            sessionToken: currentSessionToken
+        });
+        tbody.replaceChildren();
+        if (!res.success || !Array.isArray(res.records) || !res.records.length) {
+            const row = document.createElement('tr');
+            const cell = document.createElement('td');
+            cell.colSpan = 7;
+            cell.textContent = res.message || 'No audit records found.';
+            row.appendChild(cell);
+            tbody.appendChild(row);
+            return;
+        }
+        res.records.forEach(record => {
+            const row = document.createElement('tr');
+            [record.timestamp, record.administrator, record.role, record.action, record.target, record.outcome, record.details].forEach(value => {
+                const cell = document.createElement('td');
+                cell.textContent = value || '';
+                row.appendChild(cell);
+            });
+            tbody.appendChild(row);
+        });
+    } catch (error) {
+        tbody.replaceChildren();
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 7;
+        cell.textContent = 'Unable to load administrator audit records.';
+        row.appendChild(cell);
+        tbody.appendChild(row);
+    }
+}
+
 function renderAdministrators() {
     const tbody = document.getElementById('admins-tbody');
-    tbody.innerHTML = '';
+    tbody.replaceChildren();
 
-    let activeCoAdmins = 0;
+    let activeMembershipAdmins = 0;
+    let activeFinancialAdmins = 0;
 
     if (cachedAdministrators.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center;">No administrators found.</td></tr>';
+        const row = document.createElement('tr');
+        const cell = document.createElement('td');
+        cell.colSpan = 6;
+        cell.style.textAlign = 'center';
+        cell.textContent = 'No administrators found.';
+        row.appendChild(cell);
+        tbody.appendChild(row);
         return;
     }
 
@@ -946,27 +1034,72 @@ function renderAdministrators() {
         const tr = document.createElement('tr');
         const isActive = admin.status === 'ACTIVE';
 
+        if (admin.role === 'MEMBERSHIP_CO_ADMINISTRATOR' && isActive) activeMembershipAdmins++;
+        if (admin.role === 'FINANCIAL_CO_ADMINISTRATOR' && isActive) activeFinancialAdmins++;
         if (admin.role === 'CO_ADMINISTRATOR' && isActive) {
-            activeCoAdmins++;
+            activeMembershipAdmins++;
+            activeFinancialAdmins++;
         }
 
-        let actionBtn = '';
+        const actionCell = document.createElement('td');
         if (admin.role !== 'CHIEF_ADMINISTRATOR') {
+            const button = document.createElement('button');
+            button.className = isActive ? 'secondary-btn' : 'primary-btn';
+            button.style.padding = '5px 10px';
+            button.textContent = isActive ? 'Deactivate' : 'Reactivate';
             if (isActive) {
-                actionBtn = `<button class="secondary-btn" style="color: var(--danger); border-color: var(--danger); padding: 5px 10px;" onclick="deactivateAdmin('${admin.email}')">Deactivate</button>`;
+                button.style.color = 'var(--danger)';
+                button.style.borderColor = 'var(--danger)';
+                button.addEventListener('click', () => deactivateAdmin(admin.email));
             } else {
-                actionBtn = `<button class="primary-btn" style="padding: 5px 10px;" onclick="reactivateAdmin('${admin.email}')">Reactivate</button>`;
+                button.addEventListener('click', () => reactivateAdmin(admin.email));
             }
+            actionCell.appendChild(button);
         }
 
-        tr.innerHTML = `
-            <td>${admin.name}</td>
-            <td>${admin.email}</td>
-            <td><span class="badge ${admin.role === 'CHIEF_ADMINISTRATOR' ? 'chief' : 'co-admin'}">${admin.role.replace('_', ' ')}</span></td>
-            <td>${isActive ? '<span style="color: green; font-weight: bold;">ACTIVE</span>' : '<span style="color: red; font-weight: bold;">DEACTIVATED</span>'}</td>
-            <td>${admin.addedDate || ''}</td>
-            <td>${actionBtn}</td>
-        `;
+        [admin.name, admin.email].forEach(value => {
+            const cell = document.createElement('td');
+            cell.textContent = value || '';
+            tr.appendChild(cell);
+        });
+
+        const roleCell = document.createElement('td');
+        const role = String(admin.role || '');
+        const roleBadge = document.createElement('span');
+        roleBadge.className = `badge ${role === 'CHIEF_ADMINISTRATOR' ? 'chief' : 'co-admin'}`;
+        roleBadge.textContent = role.replaceAll('_', ' ');
+        roleCell.appendChild(roleBadge);
+        if (role !== 'CHIEF_ADMINISTRATOR') {
+            const roleSelect = document.createElement('select');
+            roleSelect.className = 'admin-select';
+            roleSelect.setAttribute('aria-label', 'Administrator role');
+            [['MEMBERSHIP_CO_ADMINISTRATOR', 'Membership'], ['FINANCIAL_CO_ADMINISTRATOR', 'Financial']].forEach(([value, label]) => {
+                const option = document.createElement('option');
+                option.value = value;
+                option.textContent = label;
+                roleSelect.appendChild(option);
+            });
+            roleSelect.value = role === 'FINANCIAL_CO_ADMINISTRATOR' ? role : 'MEMBERSHIP_CO_ADMINISTRATOR';
+            const saveRoleButton = document.createElement('button');
+            saveRoleButton.className = 'secondary-btn';
+            saveRoleButton.textContent = 'Save role';
+            saveRoleButton.addEventListener('click', () => updateAdminRole(admin.email, roleSelect.value));
+            roleCell.append(roleSelect, saveRoleButton);
+        }
+        tr.appendChild(roleCell);
+
+        const statusCell = document.createElement('td');
+        const statusBadge = document.createElement('span');
+        statusBadge.style.color = isActive ? 'green' : 'red';
+        statusBadge.style.fontWeight = 'bold';
+        statusBadge.textContent = isActive ? 'ACTIVE' : 'DEACTIVATED';
+        statusCell.appendChild(statusBadge);
+        tr.appendChild(statusCell);
+
+        const dateCell = document.createElement('td');
+        dateCell.textContent = admin.addedDate || '';
+        tr.appendChild(dateCell);
+        tr.appendChild(actionCell);
         tbody.appendChild(tr);
     });
 
@@ -981,24 +1114,21 @@ function renderAdministrators() {
         tableContainer.appendChild(counterInfo);
     }
 
-    const countColor = activeCoAdmins >= 3 ? 'var(--error)' : 'var(--primary)';
-    counterInfo.innerHTML = `<strong>Active Co-Administrators: <span style="color: ${countColor};">${activeCoAdmins} / 3</span></strong>`;
+    counterInfo.replaceChildren();
+    const countLabel = document.createElement('strong');
+    countLabel.textContent = `Active Membership Co-Administrators: ${activeMembershipAdmins} / 2 · Active Financial Co-Administrators: ${activeFinancialAdmins} / 2`;
+    counterInfo.appendChild(countLabel);
 
     const addBtn = document.getElementById('btn-add-admin-modal');
-    if (activeCoAdmins >= 3) {
-        addBtn.disabled = true;
-        addBtn.style.opacity = '0.5';
-        addBtn.title = 'Maximum of 3 active co-administrators reached.';
-    } else {
-        addBtn.disabled = false;
-        addBtn.style.opacity = '1';
-        addBtn.title = '';
-    }
+    addBtn.disabled = activeMembershipAdmins >= 2 && activeFinancialAdmins >= 2;
+    addBtn.style.opacity = addBtn.disabled ? '0.5' : '1';
+    addBtn.title = addBtn.disabled ? 'Both administrator role limits have been reached.' : '';
 }
 
 async function handleAddAdmin() {
     const name = document.getElementById('new-admin-name').value.trim();
     const newEmail = document.getElementById('new-admin-email').value.trim();
+    const role = document.getElementById('new-admin-role').value;
     const errorEl = document.getElementById('add-admin-error');
 
     if (!name || !newEmail) {
@@ -1014,13 +1144,15 @@ async function handleAddAdmin() {
             action: 'addAdministrator',
             sessionToken: currentSessionToken,
             newName: name,
-            newEmail: newEmail
+            newEmail: newEmail,
+            role
         });
 
         if (res.success) {
             document.getElementById('modal-add-admin').classList.remove('active');
             document.getElementById('new-admin-name').value = '';
             document.getElementById('new-admin-email').value = '';
+            document.getElementById('new-admin-role').value = 'MEMBERSHIP_CO_ADMINISTRATOR';
             loadAdministrators();
             alert('Administrator added successfully. They will receive an email shortly.');
         } else {
@@ -1030,6 +1162,21 @@ async function handleAddAdmin() {
         errorEl.textContent = 'Network error.';
     } finally {
         document.getElementById('btn-submit-add-admin').disabled = false;
+    }
+}
+
+async function updateAdminRole(targetEmail, role) {
+    try {
+        const res = await sendBackendRequest({
+            action: 'changeAdministratorRole',
+            sessionToken: currentSessionToken,
+            targetEmail,
+            role
+        });
+        if (res.success) loadAdministrators();
+        else alert(res.message || 'Unable to update administrator role.');
+    } catch (e) {
+        alert('Unable to update administrator role. Please sign in again if your session expired.');
     }
 }
 

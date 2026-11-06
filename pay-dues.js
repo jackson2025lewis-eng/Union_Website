@@ -468,18 +468,24 @@
 
       let total = 0;
       if (membersContainer) {
-        membersContainer.innerHTML = '';
+        membersContainer.replaceChildren();
         state.verifiedMembers.forEach((m) => {
           total += Number(m.amount) || 0;
           const row = document.createElement('div');
           row.className = 'dues-summary-member-row';
-          row.innerHTML = `
-            <div class="dues-summary-member-info">
-              <span class="dues-summary-member-name">${m.name}</span>
-              <span class="dues-summary-member-email">${m.email}${m.membershipId ? ' | ID: ' + m.membershipId : ''}</span>
-            </div>
-            <div class="dues-summary-member-amount">₹${Number(m.amount).toFixed(2)}</div>
-          `;
+          const info = document.createElement('div');
+          info.className = 'dues-summary-member-info';
+          const name = document.createElement('span');
+          name.className = 'dues-summary-member-name';
+          name.textContent = m.name || '';
+          const email = document.createElement('span');
+          email.className = 'dues-summary-member-email';
+          email.textContent = `${m.email || ''}${m.membershipId ? ' | ID: ' + m.membershipId : ''}`;
+          info.append(name, email);
+          const amount = document.createElement('div');
+          amount.className = 'dues-summary-member-amount';
+          amount.textContent = `₹${(Number(m.amount) || 0).toFixed(2)}`;
+          row.append(info, amount);
           membersContainer.appendChild(row);
         });
       }
@@ -741,6 +747,8 @@
         if (result && result.success && result.sessionToken) {
           state.adminSessionToken = result.sessionToken;
           sessionStorage.setItem('lsuPaymentAdminSessionToken', result.sessionToken);
+          const membershipLink = document.getElementById('btn-membership-admin');
+          if (membershipLink) membershipLink.style.display = result.role === 'CHIEF_ADMINISTRATOR' ? '' : 'none';
           showView('view-dues-admin-dashboard');
           loadPendingDuePayments();
         } else {
@@ -793,7 +801,15 @@
         state.pendingPayments = result.payments;
         renderPendingPaymentsList();
       } else {
-        container.innerHTML = `<div style="text-align: center; padding: 20px; color: var(--error-color);"><i class="fa-solid fa-circle-exclamation"></i> ${result.message || 'Unable to load payments. Session may have expired.'}</div>`;
+        const errorMessage = document.createElement('div');
+        errorMessage.style.textAlign = 'center';
+        errorMessage.style.padding = '20px';
+        errorMessage.style.color = 'var(--error-color)';
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-circle-exclamation';
+        icon.setAttribute('aria-hidden', 'true');
+        errorMessage.append(icon, document.createTextNode(` ${result.message || 'Unable to load payments. Session may have expired.'}`));
+        container.replaceChildren(errorMessage);
       }
     }
 
@@ -816,65 +832,101 @@
         return;
       }
 
-      container.innerHTML = '';
+      container.replaceChildren();
       state.pendingPayments.forEach((p) => {
         const card = document.createElement('div');
         card.className = 'dues-admin-payment-card';
 
-        let methodDetails = '';
+        const makeElement = (tag, className, text) => {
+          const element = document.createElement(tag);
+          if (className) element.className = className;
+          if (text !== undefined) element.textContent = String(text);
+          return element;
+        };
+        const addMeta = (grid, label, value) => {
+          const item = makeElement('div', 'dues-admin-meta-item');
+          item.appendChild(makeElement('span', 'key', label));
+          item.appendChild(makeElement('span', 'val', value || 'N/A'));
+          grid.appendChild(item);
+        };
+
+        const cardTop = makeElement('div', 'dues-admin-card-top');
+        const idContainer = makeElement('div');
+        idContainer.appendChild(makeElement('span', 'dues-admin-payment-id', p.paymentId || ''));
+        const submitted = makeElement('span', '');
+        submitted.style.fontSize = '0.8rem';
+        submitted.style.color = 'var(--text-muted)';
+        submitted.style.display = 'block';
+        submitted.textContent = `Submitted: ${p.submittedDate || 'Recent'}`;
+        idContainer.appendChild(submitted);
+        cardTop.append(idContainer, makeElement('span', 'dues-admin-status-pill pending', 'PENDING VERIFICATION'));
+        card.appendChild(cardTop);
+
+        const metaGrid = makeElement('div', 'dues-admin-meta-grid');
+        addMeta(metaGrid, 'Payer:', `${p.payer || ''} (${p.payerEmail || ''})`);
+        addMeta(metaGrid, 'Payment Method:', p.paymentMethod || '');
+        addMeta(metaGrid, 'Payment Date:', p.paymentDate || '');
+        const total = makeElement('div', 'dues-admin-meta-item');
+        total.appendChild(makeElement('span', 'key', 'Total Amount:'));
+        const totalValue = makeElement('span', 'val', `₹${(Number(p.totalAmount) || 0).toFixed(2)}`);
+        totalValue.style.color = 'var(--primary-color)';
+        totalValue.style.fontSize = '1.05rem';
+        total.appendChild(totalValue);
+        metaGrid.appendChild(total);
+
         if (p.paymentMethod === 'ONLINE / UPI') {
-          methodDetails = `<div class="dues-admin-meta-item"><span class="key">UPI Ref No:</span><span class="val" style="font-family: monospace;">${p.upiRefNo || 'N/A'}</span></div>`;
+          const item = makeElement('div', 'dues-admin-meta-item');
+          item.appendChild(makeElement('span', 'key', 'UPI Ref No:'));
+          const ref = makeElement('span', 'val', p.upiRefNo || 'N/A');
+          ref.style.fontFamily = 'monospace';
+          item.appendChild(ref);
+          metaGrid.appendChild(item);
         } else {
-          methodDetails = `<div class="dues-admin-meta-item"><span class="key">Cash Receiver:</span><span class="val">${p.cashReceiverName || 'N/A'} (${p.cashReceiverPosition || 'Officer'})</span></div>`;
+          addMeta(metaGrid, 'Cash Receiver:', `${p.cashReceiverName || 'N/A'} (${p.cashReceiverPosition || 'Officer'})`);
         }
+        card.appendChild(metaGrid);
 
-        let allocationsHtml = '';
+        const allocationBox = makeElement('div', 'dues-admin-allocations-box');
+        const allocationTitle = makeElement('span', '');
+        allocationTitle.style.fontWeight = '600';
+        allocationTitle.style.color = 'var(--text-main)';
+        allocationTitle.textContent = 'Members Covered:';
+        allocationBox.appendChild(allocationTitle);
         if (Array.isArray(p.allocations) && p.allocations.length) {
-          allocationsHtml = '<ul>' + p.allocations.map(a => `<li><strong>${a.name}</strong> (${a.email}) — <strong>₹${Number(a.amount).toFixed(2)}</strong></li>`).join('') + '</ul>';
+          const list = document.createElement('ul');
+          p.allocations.forEach(allocation => {
+            const item = document.createElement('li');
+            item.appendChild(makeElement('strong', '', allocation.name || ''));
+            item.appendChild(document.createTextNode(` (${allocation.email || ''}) — `));
+            item.appendChild(makeElement('strong', '', `₹${(Number(allocation.amount) || 0).toFixed(2)}`));
+            list.appendChild(item);
+          });
+          allocationBox.appendChild(list);
         }
+        card.appendChild(allocationBox);
 
-        card.innerHTML = `
-          <div class="dues-admin-card-top">
-            <div>
-              <span class="dues-admin-payment-id">${p.paymentId}</span>
-              <span style="font-size: 0.8rem; color: var(--text-muted); display: block;">Submitted: ${p.submittedDate || 'Recent'}</span>
-            </div>
-            <span class="dues-admin-status-pill pending">PENDING VERIFICATION</span>
-          </div>
+        const actionRow = makeElement('div', 'dues-admin-action-row');
+        const rejectButton = makeElement('button', 'dues-btn-primary dues-btn-danger btn-admin-reject', '');
+        rejectButton.type = 'button';
+        rejectButton.style.padding = '8px 16px';
+        rejectButton.style.fontSize = '0.9rem';
+        const rejectIcon = makeElement('i', 'fa-solid fa-xmark');
+        rejectIcon.setAttribute('aria-hidden', 'true');
+        rejectButton.append(rejectIcon, document.createTextNode(' Reject'));
+        rejectButton.addEventListener('click', () => openRejectionModal(p.paymentId));
 
-          <div class="dues-admin-meta-grid">
-            <div class="dues-admin-meta-item"><span class="key">Payer:</span><span class="val">${p.payer} (${p.payerEmail})</span></div>
-            <div class="dues-admin-meta-item"><span class="key">Payment Method:</span><span class="val">${p.paymentMethod}</span></div>
-            <div class="dues-admin-meta-item"><span class="key">Payment Date:</span><span class="val">${p.paymentDate}</span></div>
-            <div class="dues-admin-meta-item"><span class="key">Total Amount:</span><span class="val" style="color: var(--primary-color); font-size: 1.05rem;">₹${Number(p.totalAmount).toFixed(2)}</span></div>
-            ${methodDetails}
-          </div>
-
-          <div class="dues-admin-allocations-box">
-            <span style="font-weight: 600; color: var(--text-main);">Members Covered:</span>
-            ${allocationsHtml}
-          </div>
-
-          <div class="dues-admin-action-row">
-            <button type="button" class="dues-btn-primary dues-btn-danger btn-admin-reject" data-id="${p.paymentId}" style="padding: 8px 16px; font-size: 0.9rem;">
-              <i class="fa-solid fa-xmark"></i> Reject
-            </button>
-            <button type="button" class="dues-btn-primary btn-admin-approve" data-id="${p.paymentId}" style="padding: 8px 18px; font-size: 0.9rem;">
-              <i class="fa-solid fa-check"></i> Approve & Issue Receipt
-            </button>
-          </div>
-        `;
+        const approveButton = makeElement('button', 'dues-btn-primary btn-admin-approve', '');
+        approveButton.type = 'button';
+        approveButton.style.padding = '8px 18px';
+        approveButton.style.fontSize = '0.9rem';
+        const approveIcon = makeElement('i', 'fa-solid fa-check');
+        approveIcon.setAttribute('aria-hidden', 'true');
+        approveButton.append(approveIcon, document.createTextNode(' Approve & Issue Receipt'));
+        approveButton.addEventListener('click', () => handleApprovePayment(p.paymentId, approveButton));
+        actionRow.append(rejectButton, approveButton);
+        card.appendChild(actionRow);
 
         container.appendChild(card);
-      });
-
-      // Bind action buttons
-      container.querySelectorAll('.btn-admin-approve').forEach((btn) => {
-        btn.addEventListener('click', () => handleApprovePayment(btn.getAttribute('data-id'), btn));
-      });
-
-      container.querySelectorAll('.btn-admin-reject').forEach((btn) => {
-        btn.addEventListener('click', () => openRejectionModal(btn.getAttribute('data-id')));
       });
     }
 
@@ -977,6 +1029,9 @@
     }
 
     // Default dates
+    if (new URLSearchParams(window.location.search).get('admin') === 'finance') {
+      showView('view-dues-admin-login');
+    }
     const today = new Date().toISOString().split('T')[0];
     document.querySelectorAll('input[type="date"]').forEach((picker) => {
       if (!picker.value) picker.value = today;

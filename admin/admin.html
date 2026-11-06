@@ -86,6 +86,7 @@
                     <a href="#" class="admin-nav-link active" data-target="panel-dashboard"><i class="fa-solid fa-chart-line"></i> Dashboard</a>
                     <a href="#" class="admin-nav-link" data-target="panel-applications"><i class="fa-solid fa-folder-open"></i> Applications</a>
                     <a href="#" class="admin-nav-link chief-only" data-target="panel-administrators" style="display:none;"><i class="fa-solid fa-users-gear"></i> Administrators</a>
+                    <a href="../pay-dues.html?admin=finance" class="admin-nav-link chief-only" style="display:none;"><i class="fa-solid fa-money-bill-transfer"></i> Financial Administration</a>
                     <a href="#" class="admin-nav-link" id="btn-logout" style="margin-top: auto; border-top: 1px solid var(--border);"><i class="fa-solid fa-right-from-bracket"></i> Logout</a>
                 </nav>
             </aside>
@@ -171,6 +172,16 @@
                             <tbody id="admins-tbody">
                                 <tr><td colspan="6" style="text-align: center;">Loading administrators...</td></tr>
                             </tbody>
+                        </table>
+                    </div>
+                    <div class="panel-header" style="margin-top: 28px;">
+                        <h2>Administrator Audit Log</h2>
+                        <button id="btn-refresh-admin-audit" class="secondary-btn">Refresh audit log</button>
+                    </div>
+                    <div class="table-container">
+                        <table class="admin-table" id="admin-audit-table">
+                            <thead><tr><th>Timestamp</th><th>Administrator</th><th>Role</th><th>Action</th><th>Target</th><th>Outcome</th><th>Details</th></tr></thead>
+                            <tbody id="admin-audit-tbody"><tr><td colspan="7">Select refresh to load audit records.</td></tr></tbody>
                         </table>
                     </div>
                 </div>
@@ -261,8 +272,11 @@
                     <input type="email" id="new-admin-email" class="admin-input" required>
                 </div>
                 <div class="form-group">
-                    <label>Role</label>
-                    <input type="text" class="admin-input" value="Co-Administrator" disabled>
+                    <label for="new-admin-role">Role</label>
+                    <select id="new-admin-role" class="admin-select">
+                        <option value="MEMBERSHIP_CO_ADMINISTRATOR">Membership Co-Administrator</option>
+                        <option value="FINANCIAL_CO_ADMINISTRATOR">Financial Co-Administrator</option>
+                    </select>
                 </div>
                 <div class="error-msg" id="add-admin-error"></div>
             </div>
