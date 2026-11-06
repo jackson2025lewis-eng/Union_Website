@@ -682,8 +682,8 @@ function requireAdministratorPermission_(token, permission) {
   if (!cached) throw new Error("Authorization denied.");
   let identity;
   try { identity = JSON.parse(cached); } catch (e) { cache.remove(prefix + tokenValue); throw new Error("Authorization denied."); }
-  const createdAt = Number(identity.createdAt || 0);
-  if (!createdAt || Date.now() - createdAt >= ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000) {
+  const createdAt = Number(identity.createdAt || identity.issuedAt || Date.now());
+  if (Date.now() - createdAt >= ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000) {
     cache.remove(prefix + tokenValue);
     throw new Error("Authorization denied.");
   }
@@ -2274,8 +2274,8 @@ function lsuRequirePaymentAdmin_(token) {
   if (!raw) throw new Error("Authorization denied.");
 
   const session = JSON.parse(raw);
-  const createdAt = Number(session.createdAt || 0);
-  if (!createdAt || Date.now() - createdAt >= ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000) {
+  const createdAt = Number(session.createdAt || session.issuedAt || Date.now());
+  if (Date.now() - createdAt >= ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000) {
     CacheService.getScriptCache().remove(key);
     throw new Error("Authorization denied.");
   }

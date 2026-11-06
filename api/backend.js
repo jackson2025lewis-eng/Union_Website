@@ -1,4 +1,5 @@
 const APPS_SCRIPT_URL =
+  process.env.APPS_SCRIPT_URL ||
   "https://script.google.com/macros/s/AKfycbzZyI7gERGia6KDLpN_cp-S2OL4Tr7eOVL0vo9lWC3MILFJIIaVqjLs7jPG3Lpd_T_YIg/exec";
 
 module.exports = async function handler(req, res) {
