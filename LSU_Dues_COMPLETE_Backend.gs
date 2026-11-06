@@ -436,12 +436,14 @@ function getAdministrators(sessionToken) {
   return { success: true, administrators: admins };
 }
 
-function addAdministrator(sessionToken, newEmail, newName) {
+function addAdministrator(sessionToken, newEmail, newName, requestedRole) {
   const session = requireAdministratorSession(sessionToken);
   if (session.role !== "CHIEF_ADMINISTRATOR") throw new Error("Only the Chief Administrator can add co-administrators.");
   
   newEmail = extractEmail(newEmail);
   newName = String(newName || "").trim();
+  requestedRole = String(requestedRole || "").trim().toUpperCase();
+  const role = (requestedRole === "FINANCIAL_CO_ADMINISTRATOR" || requestedRole === "MEMBERSHIP_CO_ADMINISTRATOR") ? requestedRole : "CO_ADMINISTRATOR";
   if (!validateEmail(newEmail)) throw new Error("Invalid email.");
   if (isChiefAdministrator(newEmail)) throw new Error("Cannot add the Chief Administrator again.");
   
@@ -454,11 +456,11 @@ function addAdministrator(sessionToken, newEmail, newName) {
     }
   }
   
-  if (getActiveCoAdminCount(data) >= 3) {
-    throw new Error("Maximum of 3 active co-administrators reached. Deactivate one before adding another.");
+  if (getActiveCoAdminCount(data) >= 4) {
+    throw new Error("The active account limit for this administrator role has been reached.");
   }
   
-  sheet.appendRow([newEmail, newName, "CO_ADMINISTRATOR", "ACTIVE", new Date(), session.email, "", "", "No", 0]);
+  sheet.appendRow([newEmail, newName, role, "ACTIVE", new Date(), session.email, "", "", "No", 0]);
   
   sendSecureEmail(
     newEmail,
@@ -575,12 +577,19 @@ function verifyAdministratorOTP(email, enteredOTP) {
 }
 
 function requireAdministratorSession(token) {
-  const cached = CacheService.getScriptCache().get(ADMIN_SESSION_PREFIX + String(token || "").trim());
+  const tokenStr = String(token || "").trim();
+  const cache = CacheService.getScriptCache();
+  let prefix = ADMIN_SESSION_PREFIX;
+  let cached = tokenStr && cache.get(prefix + tokenStr);
+  if (!cached) {
+    prefix = LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX;
+    cached = tokenStr && cache.get(prefix + tokenStr);
+  }
   if (!cached) throw new Error("Administrator session expired. Please log in again.");
   const session = JSON.parse(cached);
   const access = checkAdministratorAccess(session.email);
   if (!access.authorized || access.role !== session.role) throw new Error("Administrator access revoked.");
-  CacheService.getScriptCache().put(ADMIN_SESSION_PREFIX + token, cached, ADMIN_SESSION_TTL_SECONDS);
+  CacheService.getScriptCache().put(prefix + tokenStr, cached, ADMIN_SESSION_TTL_SECONDS);
   return session;
 }
 
@@ -2131,6 +2140,94 @@ function logoutPaymentAdmin(sessionToken) {
   return { success: true };
 }
 
+function getFinancialReport(sessionToken) {
+  lsuRequirePaymentAdmin_(sessionToken);
+  ensurePaymentSheets();
+
+  const ps = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME);
+  const as = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
+  const pv = ps.getDataRange().getValues();
+  const av = as.getDataRange().getValues();
+
+  let totalMoneyCollected = 0;
+  let totalDuesCollected = 0;
+  let totalContributionsCollected = 0;
+  let totalUpiCollected = 0;
+  let totalCashCollected = 0;
+  let verifiedCount = 0;
+
+  let totalPendingAmount = 0;
+  let pendingCount = 0;
+
+  const verifiedPayments = [];
+
+  for (let i = 1; i < pv.length; i++) {
+    const row = pv[i];
+    const paymentId = String(row[0] || "");
+    const payer = String(row[1] || "");
+    const payerEmail = String(row[2] || "");
+    const method = String(row[3] || "");
+    const totalAmount = Number(row[4] || 0);
+    const paymentDate = String(row[5] || "");
+    const upiRef = String(row[6] || "");
+    const cashReceiver = String(row[7] || "");
+    const status = String(row[9] || "");
+    let approvedDate = row[11];
+    if (approvedDate instanceof Date) {
+      approvedDate = formatExactDateTime(approvedDate);
+    } else {
+      approvedDate = String(approvedDate || "");
+    }
+
+    if (status === "PAID / VERIFIED") {
+      totalMoneyCollected += totalAmount;
+      verifiedCount++;
+      if (method === "ONLINE / UPI") {
+        totalUpiCollected += totalAmount;
+      } else if (method === "CASH") {
+        totalCashCollected += totalAmount;
+      }
+      verifiedPayments.push({
+        paymentId,
+        payer,
+        payerEmail,
+        paymentMethod: method,
+        totalAmount,
+        paymentDate,
+        approvedDate
+      });
+    } else if (status === "PENDING VERIFICATION") {
+      totalPendingAmount += totalAmount;
+      pendingCount++;
+    }
+  }
+
+  // Dues allocations breakdown from PaymentAllocations
+  for (let i = 1; i < av.length; i++) {
+    const aStatus = String(av[i][5] || "");
+    const aAmount = Number(av[i][4] || 0);
+    if (aStatus === "PAID / VERIFIED") {
+      totalDuesCollected += aAmount;
+    }
+  }
+
+  return {
+    success: true,
+    report: {
+      totalMoneyCollected: Math.round(totalMoneyCollected * 100) / 100,
+      totalDuesCollected: Math.round(totalDuesCollected * 100) / 100,
+      totalContributionsCollected: Math.round(totalContributionsCollected * 100) / 100,
+      contributionsTracked: false,
+      totalUpiCollected: Math.round(totalUpiCollected * 100) / 100,
+      totalCashCollected: Math.round(totalCashCollected * 100) / 100,
+      verifiedCount,
+      totalPendingAmount: Math.round(totalPendingAmount * 100) / 100,
+      pendingCount,
+      verifiedPayments: verifiedPayments.reverse().slice(0, 100)
+    }
+  };
+}
+
 /*******************************************************
  * MAIN WEB APP ENDPOINT
  *******************************************************/
@@ -2160,7 +2257,7 @@ function doPost(e) {
     if (action === "resendUploadLink" || action === "resendDocumentUpdateLink") return jsonResponse(resendUploadLink(payload));
     if (action === "resendVerificationCode") return jsonResponse(resendVerificationCode(payload));
     if (action === "getAdministrators") return jsonResponse(getAdministrators(payload.sessionToken));
-    if (action === "addAdministrator") return jsonResponse(addAdministrator(payload.sessionToken, payload.newEmail, payload.newName));
+    if (action === "addAdministrator") return jsonResponse(addAdministrator(payload.sessionToken, payload.newEmail, payload.newName, payload.role));
     if (action === "deactivateAdministrator") return jsonResponse(deactivateAdministrator(payload.sessionToken, payload.targetEmail));
     if (action === "reactivateAdministrator") return jsonResponse(reactivateAdministrator(payload.sessionToken, payload.targetEmail));
     if (action === "processVerificationReplies") return jsonResponse(processVerificationReplies(payload));
@@ -2180,9 +2277,10 @@ function doPost(e) {
     if (action === "getDuePaymentData") return jsonResponse(getDuePaymentData(payload.sessionToken, payload.targetEmail || payload.otherEmail || payload.email));
     if (action === "submitDuePayment") return jsonResponse(submitDuePayment(payload));
     if (action === "logoutDueMember") return jsonResponse(logoutDueMember(payload.sessionToken));
-    if (action === "sendPaymentAdminOTP") return jsonResponse(paymentAdminSendOTP(payload.email));
-    if (action === "verifyPaymentAdminOTP") return jsonResponse(paymentAdminVerifyOTP(payload.email, payload.otp));
+    if (action === "sendPaymentAdminOTP" || action === "paymentAdminSendOTP") return jsonResponse(paymentAdminSendOTP(payload.email));
+    if (action === "verifyPaymentAdminOTP" || action === "paymentAdminVerifyOTP") return jsonResponse(paymentAdminVerifyOTP(payload.email, payload.otp));
     if (action === "getPendingDuePayments") return jsonResponse(getPendingDuePayments(payload.sessionToken));
+    if (action === "getFinancialReport") return jsonResponse(getFinancialReport(payload.sessionToken));
     if (action === "approveDuePayment") return jsonResponse(approveDuePayment(payload));
     if (action === "rejectDuePayment") return jsonResponse(rejectDuePayment(payload));
     if (action === "logoutPaymentAdmin") return jsonResponse(logoutPaymentAdmin(payload.sessionToken));

@@ -807,14 +807,37 @@
         state.pendingPayments = result.payments;
         renderPendingPaymentsList();
       } else {
+        const isExpired = Boolean(result && result.message && (result.message.includes('expired') || result.message.includes('Authorization denied')));
         const errorMessage = document.createElement('div');
         errorMessage.style.textAlign = 'center';
-        errorMessage.style.padding = '20px';
+        errorMessage.style.padding = '24px 16px';
         errorMessage.style.color = 'var(--error-color)';
         const icon = document.createElement('i');
-        icon.className = 'fa-solid fa-circle-exclamation';
+        icon.className = isExpired ? 'fa-solid fa-lock fa-2x' : 'fa-solid fa-circle-exclamation';
+        icon.style.display = isExpired ? 'block' : 'inline-block';
+        if (isExpired) icon.style.marginBottom = '8px';
         icon.setAttribute('aria-hidden', 'true');
-        errorMessage.append(icon, document.createTextNode(` ${result.message || 'Unable to load payments. Session may have expired.'}`));
+        const text = document.createElement('p');
+        text.style.margin = isExpired ? '4px 0 12px' : '4px 0';
+        text.style.fontWeight = isExpired ? '600' : 'normal';
+        text.textContent = isExpired ? 'Administrator session expired. Please sign in again.' : ` ${result.message || 'Unable to load payments. Session may have expired.'}`;
+        errorMessage.append(icon, text);
+        if (isExpired) {
+          const btnRelogin = document.createElement('button');
+          btnRelogin.type = 'button';
+          btnRelogin.className = 'dues-btn-primary';
+          btnRelogin.style.fontSize = '0.85rem';
+          btnRelogin.style.padding = '6px 16px';
+          btnRelogin.textContent = 'Sign In Again';
+          btnRelogin.addEventListener('click', () => {
+            sessionStorage.removeItem('lsuPaymentAdminSessionToken');
+            sessionStorage.removeItem('lsuPaymentAdminRole');
+            state.adminSessionToken = null;
+            applyAdminRoleUI(null);
+            showView('view-dues-admin-login');
+          });
+          errorMessage.appendChild(btnRelogin);
+        }
         container.replaceChildren(errorMessage);
       }
     }
@@ -1119,7 +1142,8 @@
             if (inputCoadminEmail) inputCoadminEmail.value = '';
           } else {
             if (addCoadminError) {
-              addCoadminError.textContent = result.message || 'Unable to add co-administrator.';
+              const isExpired = Boolean(result && result.message && (result.message.includes('expired') || result.message.includes('Authorization denied')));
+              addCoadminError.textContent = isExpired ? 'Administrator session expired. Please log in again.' : (result.message || 'Unable to add co-administrator.');
               addCoadminError.style.display = 'block';
             }
           }
@@ -1230,13 +1254,60 @@
           if (reportContent) reportContent.style.display = 'block';
         } else {
           if (reportLoading) {
-            const errorMessage = document.createElement('span');
-            errorMessage.style.color = 'var(--error-color)';
-            const icon = document.createElement('i');
-            icon.className = 'fa-solid fa-circle-exclamation';
-            icon.setAttribute('aria-hidden', 'true');
-            errorMessage.append(icon, document.createTextNode(` ${result.message || 'Unable to load financial report.'}`));
-            reportLoading.replaceChildren(errorMessage);
+            const isExpired = Boolean(result && result.message && (result.message.includes('expired') || result.message.includes('Authorization denied')));
+            const isMissingAction = Boolean(result && result.message && result.message.includes('Invalid action: getFinancialReport'));
+            const errorBox = document.createElement('div');
+            errorBox.style.padding = '20px 14px';
+            errorBox.style.textAlign = 'center';
+            if (isMissingAction) {
+              const icon = document.createElement('i');
+              icon.className = 'fa-solid fa-triangle-exclamation fa-2x';
+              icon.style.color = '#f59e0b';
+              icon.style.display = 'block';
+              icon.style.marginBottom = '8px';
+              const heading = document.createElement('strong');
+              heading.style.color = '#b45309';
+              heading.style.display = 'block';
+              heading.textContent = 'Backend Update Pending in Google Apps Script';
+              const p = document.createElement('p');
+              p.style.fontSize = '0.85rem';
+              p.style.color = 'var(--text-muted)';
+              p.style.margin = '6px 0 0';
+              p.textContent = 'The financial reporting endpoint is ready in code. Please ensure Code.gs / LSU_Dues_COMPLETE_Backend.gs is updated and deployed as a New Version in the Apps Script project editor to activate live reporting.';
+              errorBox.append(icon, heading, p);
+            } else if (isExpired) {
+              const icon = document.createElement('i');
+              icon.className = 'fa-solid fa-lock fa-2x';
+              icon.style.color = 'var(--error-color)';
+              icon.style.display = 'block';
+              icon.style.marginBottom = '8px';
+              const heading = document.createElement('strong');
+              heading.style.color = 'var(--error-color)';
+              heading.style.display = 'block';
+              heading.textContent = 'Administrator Session Expired';
+              const btn = document.createElement('button');
+              btn.type = 'button';
+              btn.className = 'dues-btn-primary';
+              btn.style.marginTop = '12px';
+              btn.style.padding = '6px 16px';
+              btn.style.fontSize = '0.85rem';
+              btn.textContent = 'Log In Again';
+              btn.addEventListener('click', () => {
+                closeFinancialReportModal();
+                sessionStorage.removeItem('lsuPaymentAdminSessionToken');
+                sessionStorage.removeItem('lsuPaymentAdminRole');
+                state.adminSessionToken = null;
+                applyAdminRoleUI(null);
+                showView('view-dues-admin-login');
+              });
+              errorBox.append(icon, heading, btn);
+            } else {
+              const icon = document.createElement('i');
+              icon.className = 'fa-solid fa-circle-exclamation';
+              icon.style.color = 'var(--error-color)';
+              errorBox.append(icon, document.createTextNode(` ${result.message || 'Unable to load financial report.'}`));
+            }
+            reportLoading.replaceChildren(errorBox);
           }
         }
       } catch (err) {
