@@ -668,11 +668,10 @@
           <div id="view-dues-admin-dashboard" class="dues-view-section">
             <div class="dues-card dues-card-wide">
               <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 14px; margin-bottom: 18px; flex-wrap: wrap; gap: 8px;">
-                <div>
-                  <div class="dues-admin-badge" style="margin-bottom: 4px;">
-                    <i class="fa-solid fa-shield-halved"></i> Financial Administration
-                  </div>
-                  <h2 style="text-align: left; margin: 0; font-size: 1.3rem;">Dues Management Portal</h2>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                  <button type="button" id="btn-dues-add-admin" class="dues-btn-secondary chief-only" style="display: none; padding: 6px 14px; font-size: 0.88rem; color: #1e40af; border-color: #93c5fd; background: #eff6ff;">
+                    <i class="fa-solid fa-user-plus"></i> Add Co-Administrator
+                  </button>
                 </div>
                 <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
                   <a id="btn-membership-admin" href="admin/admin.html" class="dues-btn-secondary" style="display: none; padding: 6px 14px; font-size: 0.88rem;">Membership Administration</a>
@@ -682,15 +681,149 @@
                 </div>
               </div>
 
-              <div class="dues-member-notice-area" style="background: #eff6ff; border-color: #bfdbfe; margin-bottom: 20px;">
-                <i class="fa-solid fa-user-shield" style="color: #2563eb;"></i>
-                <div>
-                  <strong style="color: #1e40af;">Chief Administrator Control:</strong>
-                  <p style="margin: 2px 0 0; font-size: 0.85rem;">
-                    Administrator permissions and accounts continue to be managed centrally under the LSU database system governed by the Chief Administrator.
-                  </p>
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                  <i class="fa-solid fa-money-bill-transfer" style="color: var(--primary-color); font-size: 1.5rem;"></i>
+                  <div>
+                    <h2 style="margin: 0; font-size: 1.3rem; color: var(--text-main); font-weight: 700;">Dues Management Portal</h2>
+                    <span style="font-size: 0.84rem; color: var(--text-muted);">Manage member dues, review pending transactions, and track union finances</span>
+                  </div>
+                </div>
+                <button type="button" id="btn-dues-financial-report" class="dues-btn-secondary" style="padding: 8px 14px; font-size: 0.88rem; background: #f0fdf4; border-color: #86efac; color: #166534;">
+                  <i class="fa-solid fa-chart-pie"></i> Financial Report
+                </button>
+              </div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                <h3 style="margin: 0; border: none; padding: 0;">PENDING DUES PAYMENTS</h3>
+                <button type="button" id="btn-refresh-pending-payments" class="dues-btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;">
+                  <i class="fa-solid fa-rotate-right"></i> Refresh
+                </button>
+              </div>
+
+              <div id="admin-pending-alert" class="dues-success-msg" style="margin-bottom: 14px;"></div>
+              <div id="admin-pending-error" class="dues-error-msg" style="margin-bottom: 14px;"></div>
+
+              <div id="admin-pending-payments-list">
+                <!-- Dynamically populated payment cards or empty notice -->
+              </div>
+            </div>
+          </div>
+
+          <!-- FINANCIAL REPORT MODAL -->
+          <div class="dues-modal-backdrop" id="duesFinancialReportModal">
+            <div class="dues-modal-card" style="max-width: 660px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-file-invoice-dollar" style="color: #16a34a; font-size: 1.4rem;"></i>
+                  <h3 style="margin: 0; font-size: 1.15rem; color: var(--text-main);">Financial Report: Dues & Contributions</h3>
+                </div>
+                <button type="button" id="btnCloseFinancialReport" style="background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+              </div>
+              <div id="financial-report-loading" style="text-align: center; padding: 26px; color: var(--text-muted);">
+                <i class="fa-solid fa-spinner fa-spin"></i> Calculating financial summary from verified records...
+              </div>
+              <div id="financial-report-content" style="display: none;">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0; margin-bottom: 14px;">
+                  Live financial report calculated strictly from verified payments and member allocations in the database.
+                </p>
+
+                <!-- KPI Summary Cards -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px;">
+                  <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 14px; text-align: center;">
+                    <span style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: #166534; display: block; margin-bottom: 4px;">Total Money Collected</span>
+                    <strong id="rep-total-collected" style="font-size: 1.4rem; color: #15803d; display: block;">₹0.00</strong>
+                    <span id="rep-verified-count" style="font-size: 0.75rem; color: #166534; display: block; margin-top: 2px;">0 verified transactions</span>
+                  </div>
+                  <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px; text-align: center;">
+                    <span style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: #1e40af; display: block; margin-bottom: 4px;">Dues Collected</span>
+                    <strong id="rep-dues-collected" style="font-size: 1.4rem; color: #2563eb; display: block;">₹0.00</strong>
+                    <span style="font-size: 0.75rem; color: #1e40af; display: block; margin-top: 2px;">Verified member dues</span>
+                  </div>
+                  <div style="background: #fefce8; border: 1px solid #fef08a; border-radius: 8px; padding: 14px; text-align: center;">
+                    <span style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: #854d0e; display: block; margin-bottom: 4px;">Contributions Collected</span>
+                    <strong id="rep-contributions-collected" style="font-size: 1.1rem; color: #ca8a04; display: block;">Not tracked</strong>
+                    <span style="font-size: 0.75rem; color: #854d0e; display: block; margin-top: 2px;">No separate contribution records</span>
+                  </div>
+                </div>
+
+                <!-- Method Breakdown -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; display: flex; justify-content: space-around; flex-wrap: wrap; gap: 12px; font-size: 0.88rem;">
+                  <div>
+                    <i class="fa-solid fa-mobile-screen-button" style="color: var(--primary-color);"></i>
+                    <strong> UPI:</strong> <span id="rep-upi-total">₹0.00</span>
+                  </div>
+                  <div style="border-left: 1px solid #cbd5e1; padding-left: 12px;">
+                    <i class="fa-solid fa-money-bill-1-wave" style="color: #16a34a;"></i>
+                    <strong> Cash:</strong> <span id="rep-cash-total">₹0.00</span>
+                  </div>
+                  <div style="border-left: 1px solid #cbd5e1; padding-left: 12px;">
+                    <i class="fa-solid fa-clock-rotate-left" style="color: #f97316;"></i>
+                    <strong> Pending:</strong> <span id="rep-pending-amount">₹0.00</span> (<span id="rep-pending-count">0</span>)
+                  </div>
+                </div>
+
+                <!-- Verified Transactions Table -->
+                <h4 style="margin: 0 0 10px; font-size: 0.95rem; color: var(--text-main);">Verified Collections Record</h4>
+                <div style="max-height: 220px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem; text-align: left;">
+                    <thead style="background: #f1f5f9; position: sticky; top: 0;">
+                      <tr>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Payment ID</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Payer</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Method</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Amount</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Date</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rep-transactions-tbody">
+                      <tr><td colspan="5" style="text-align: center; padding: 16px; color: var(--text-muted);">No verified collections recorded yet.</td></tr>
+                    </tbody>
+                  </table>
                 </div>
               </div>
+              <div style="margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" class="dues-btn-secondary" id="btnCloseFinancialReport2">Close</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ADD CO-ADMINISTRATOR MODAL (CHIEF ADMIN ONLY) -->
+          <div class="dues-modal-backdrop" id="duesAddAdminModal">
+            <div class="dues-modal-card" style="max-width: 480px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-user-plus" style="color: #2563eb; font-size: 1.3rem;"></i>
+                  <h3 style="margin: 0; font-size: 1.15rem; color: var(--text-main);">Add Co-Administrator</h3>
+                </div>
+                <button type="button" id="btnCloseAddAdmin" style="background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+              </div>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0; margin-bottom: 14px;">
+                Authorize a new Co-Administrator account under the central LSU database. An authorization email will be sent automatically.
+              </p>
+              <div style="margin-bottom: 14px;">
+                <label for="new-coadmin-name" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Full Name <span class="required-star">*</span></label>
+                <input type="text" id="new-coadmin-name" class="dues-input" placeholder="e.g., Jane Doe" required>
+              </div>
+              <div style="margin-bottom: 14px;">
+                <label for="new-coadmin-email" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Email Address <span class="required-star">*</span></label>
+                <input type="email" id="new-coadmin-email" class="dues-input" placeholder="e.g., coadmin@gmail.com" required>
+              </div>
+              <div style="margin-bottom: 16px;">
+                <label for="new-coadmin-role" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Administrator Role <span class="required-star">*</span></label>
+                <select id="new-coadmin-role" class="dues-input">
+                  <option value="FINANCIAL_CO_ADMINISTRATOR">Financial Co-Administrator</option>
+                  <option value="MEMBERSHIP_CO_ADMINISTRATOR">Membership Co-Administrator</option>
+                </select>
+              </div>
+              <div id="add-coadmin-error" class="dues-error-msg" style="margin-bottom: 12px; display: none;"></div>
+              <div id="add-coadmin-success" class="dues-success-msg" style="margin-bottom: 12px; display: none;"></div>
+              <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" class="dues-btn-secondary" id="btnCancelAddAdmin">Cancel</button>
+                <button type="button" class="dues-btn-primary" id="btnSubmitAddCoadmin">Authorize Co-Admin</button>
+              </div>
+            </div>
+          </div>
 
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
                 <h3 style="margin: 0; border: none; padding: 0;">PENDING DUES PAYMENTS</h3>

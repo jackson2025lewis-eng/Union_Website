@@ -673,29 +673,34 @@ function getActiveCoAdminCount(data, expectedRole, excludedSheetRow, columns) {
 function requireAdministratorPermission_(token, permission) {
   const tokenValue = String(token || "").trim();
   const cache = CacheService.getScriptCache();
-  const cached = tokenValue && cache.get(ADMIN_SESSION_PREFIX + tokenValue);
+  let prefix = ADMIN_SESSION_PREFIX;
+  let cached = tokenValue && cache.get(prefix + tokenValue);
+  if (!cached) {
+    prefix = LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX;
+    cached = tokenValue && cache.get(prefix + tokenValue);
+  }
   if (!cached) throw new Error("Authorization denied.");
   let identity;
-  try { identity = JSON.parse(cached); } catch (e) { cache.remove(ADMIN_SESSION_PREFIX + tokenValue); throw new Error("Authorization denied."); }
+  try { identity = JSON.parse(cached); } catch (e) { cache.remove(prefix + tokenValue); throw new Error("Authorization denied."); }
   const createdAt = Number(identity.createdAt || 0);
   if (!createdAt || Date.now() - createdAt >= ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000) {
-    cache.remove(ADMIN_SESSION_PREFIX + tokenValue);
+    cache.remove(prefix + tokenValue);
     throw new Error("Authorization denied.");
   }
   const revokedAt = Number(cache.get("LSU_ADMIN_REVOKE_" + extractEmail(identity.email)) || 0);
   if (revokedAt && Number(identity.issuedAt || 0) <= revokedAt) {
-    cache.remove(ADMIN_SESSION_PREFIX + tokenValue);
+    cache.remove(prefix + tokenValue);
     throw new Error("Authorization denied.");
   }
   const access = checkAdministratorAccess(identity.email);
   if (!access.authorized || access.role !== identity.role || !ADMIN_PERMISSIONS_[access.role] || !ADMIN_PERMISSIONS_[access.role].includes(permission)) {
     auditAdminAction_({ email: access.authorized ? extractEmail(identity.email) : identity.email, role: access.authorized ? access.role : "UNKNOWN" }, "authorization_denied", "", "DENIED", permission);
-    cache.remove(ADMIN_SESSION_PREFIX + tokenValue);
+    cache.remove(prefix + tokenValue);
     throw new Error("Authorization denied.");
   }
   const fresh = { email: extractEmail(identity.email), role: access.role, name: access.name, issuedAt: Number(identity.issuedAt || createdAt), createdAt };
   const idleTtl = Math.min(ADMIN_SESSION_TTL_SECONDS, Math.max(1, Math.ceil((ADMIN_SESSION_ABSOLUTE_TTL_SECONDS * 1000 - (Date.now() - createdAt)) / 1000)));
-  cache.put(ADMIN_SESSION_PREFIX + tokenValue, JSON.stringify(fresh), idleTtl);
+  cache.put(prefix + tokenValue, JSON.stringify(fresh), idleTtl);
   return fresh;
 }
 
@@ -2251,6 +2256,7 @@ function paymentAdminVerifyOTP(email, enteredOTP) {
   }
 
   const token = Utilities.getUuid();
+  const createdAt = Date.now();
   CacheService.getScriptCache().put(
     LSU_PAYMENT_CONFIG.PAYMENT_ADMIN_SESSION_PREFIX + token,
     JSON.stringify({ email, role: access.role, name: access.name, issuedAt: createdAt, createdAt }),
@@ -2335,6 +2341,99 @@ function getPendingDuePayments(sessionToken) {
     }
   }
   return { success: true, payments };
+}
+
+function getFinancialReport(sessionToken) {
+  lsuRequirePaymentAdmin_(sessionToken);
+  ensurePaymentSheets();
+
+  const ps = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME);
+  const as = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
+  const pv = ps.getDataRange().getValues();
+  const av = as.getDataRange().getValues();
+
+  let totalMoneyCollected = 0;
+  let totalDuesCollected = 0;
+  let totalContributionsCollected = 0;
+  let totalUpiCollected = 0;
+  let totalCashCollected = 0;
+  let verifiedCount = 0;
+
+  let totalPendingAmount = 0;
+  let pendingCount = 0;
+
+  const verifiedPayments = [];
+
+  for (let i = 1; i < pv.length; i++) {
+    const row = pv[i];
+    const paymentId = String(row[0] || "");
+    const payer = String(row[1] || "");
+    const payerEmail = String(row[2] || "");
+    const method = String(row[3] || "");
+    const totalAmount = Number(row[4] || 0);
+    const paymentDate = String(row[5] || "");
+    const upiRef = String(row[6] || "");
+    const cashReceiver = String(row[7] || "");
+    const status = String(row[9] || "");
+    let approvedDate = row[11];
+    if (approvedDate instanceof Date) {
+      approvedDate = formatExactDateTime(approvedDate);
+    } else {
+      approvedDate = String(approvedDate || "");
+    }
+    const receiptId = String(row[13] || "");
+
+    if (status === "PAID / VERIFIED") {
+      totalMoneyCollected += totalAmount;
+      verifiedCount++;
+      if (method === "ONLINE / UPI") {
+        totalUpiCollected += totalAmount;
+      } else if (method === "CASH") {
+        totalCashCollected += totalAmount;
+      }
+      verifiedPayments.push({
+        paymentId,
+        payer,
+        payerEmail,
+        paymentMethod: method,
+        totalAmount,
+        paymentDate,
+        upiRef,
+        cashReceiver,
+        approvedDate,
+        receiptId,
+        status
+      });
+    } else if (status === "PENDING VERIFICATION") {
+      totalPendingAmount += totalAmount;
+      pendingCount++;
+    }
+  }
+
+  // Dues allocations breakdown from PaymentAllocations
+  for (let i = 1; i < av.length; i++) {
+    const aStatus = String(av[i][5] || "");
+    const aAmount = Number(av[i][4] || 0);
+    if (aStatus === "PAID / VERIFIED") {
+      totalDuesCollected += aAmount;
+    }
+  }
+
+  return {
+    success: true,
+    report: {
+      totalMoneyCollected: Math.round(totalMoneyCollected * 100) / 100,
+      totalDuesCollected: Math.round(totalDuesCollected * 100) / 100,
+      totalContributionsCollected: Math.round(totalContributionsCollected * 100) / 100,
+      contributionsTracked: false,
+      totalUpiCollected: Math.round(totalUpiCollected * 100) / 100,
+      totalCashCollected: Math.round(totalCashCollected * 100) / 100,
+      verifiedCount,
+      totalPendingAmount: Math.round(totalPendingAmount * 100) / 100,
+      pendingCount,
+      verifiedPayments: verifiedPayments.reverse().slice(0, 100)
+    }
+  };
 }
 
 function lsuPaymentRow_(paymentId) {
@@ -2578,6 +2677,7 @@ function doPost(e) {
     if (action === "sendPaymentAdminOTP") return jsonResponse(paymentAdminSendOTP(payload.email));
     if (action === "verifyPaymentAdminOTP") return jsonResponse(paymentAdminVerifyOTP(payload.email, payload.otp));
     if (action === "getPendingDuePayments") return jsonResponse(getPendingDuePayments(payload.sessionToken));
+    if (action === "getFinancialReport") return jsonResponse(getFinancialReport(payload.sessionToken));
     if (action === "approveDuePayment") return jsonResponse(approveDuePayment(payload));
     if (action === "rejectDuePayment") return jsonResponse(rejectDuePayment(payload));
     if (action === "logoutPaymentAdmin") return jsonResponse(logoutPaymentAdmin(payload.sessionToken));

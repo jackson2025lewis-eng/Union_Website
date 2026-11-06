@@ -747,10 +747,14 @@
         if (result && result.success && result.sessionToken) {
           state.adminSessionToken = result.sessionToken;
           sessionStorage.setItem('lsuPaymentAdminSessionToken', result.sessionToken);
-          const membershipLink = document.getElementById('btn-membership-admin');
-          if (membershipLink) membershipLink.style.display = result.role === 'CHIEF_ADMINISTRATOR' ? '' : 'none';
+          sessionStorage.setItem('lsuPaymentAdminRole', result.role || '');
+          applyAdminRoleUI(result.role);
           showView('view-dues-admin-dashboard');
           loadPendingDuePayments();
+          if (result.role === 'CHIEF_ADMINISTRATOR' &&
+              new URLSearchParams(window.location.search).get('action') === 'add-coadmin') {
+            openAddAdminModal();
+          }
         } else {
           showError('dues-admin-otp-error', result.message || 'Payment administrator code has expired or is invalid.');
         }
@@ -774,6 +778,8 @@
         }
         state.adminSessionToken = null;
         sessionStorage.removeItem('lsuPaymentAdminSessionToken');
+        sessionStorage.removeItem('lsuPaymentAdminRole');
+        applyAdminRoleUI(null);
         showView('view-dues-admin-login');
       });
     }
@@ -1028,7 +1034,232 @@
       });
     }
 
+    // ------------------------------------------------------------------------
+    // Role-Based UI Display (Chief Admin Controls)
+    // ------------------------------------------------------------------------
+    function applyAdminRoleUI(role) {
+      state.adminRole = role;
+      const isChief = role === 'CHIEF_ADMINISTRATOR';
+      const membershipLink = document.getElementById('btn-membership-admin');
+      if (membershipLink) membershipLink.style.display = isChief ? '' : 'none';
+      const addAdminBtn = document.getElementById('btn-dues-add-admin');
+      if (addAdminBtn) addAdminBtn.style.display = isChief ? '' : 'none';
+    }
+
+    // ------------------------------------------------------------------------
+    // Step 12: Add Co-Administrator Modal (Chief Administrator Only)
+    // ------------------------------------------------------------------------
+    const addAdminModal = document.getElementById('duesAddAdminModal');
+    const btnOpenAddAdmin = document.getElementById('btn-dues-add-admin');
+    const btnCloseAddAdmin = document.getElementById('btnCloseAddAdmin');
+    const btnCancelAddAdmin = document.getElementById('btnCancelAddAdmin');
+    const btnSubmitAddCoadmin = document.getElementById('btnSubmitAddCoadmin');
+    const inputCoadminName = document.getElementById('new-coadmin-name');
+    const inputCoadminEmail = document.getElementById('new-coadmin-email');
+    const selectCoadminRole = document.getElementById('new-coadmin-role');
+    const addCoadminError = document.getElementById('add-coadmin-error');
+    const addCoadminSuccess = document.getElementById('add-coadmin-success');
+
+    function openAddAdminModal() {
+      if (inputCoadminName) inputCoadminName.value = '';
+      if (inputCoadminEmail) inputCoadminEmail.value = '';
+      if (selectCoadminRole) selectCoadminRole.value = 'FINANCIAL_CO_ADMINISTRATOR';
+      if (addCoadminError) { addCoadminError.textContent = ''; addCoadminError.style.display = 'none'; }
+      if (addCoadminSuccess) { addCoadminSuccess.textContent = ''; addCoadminSuccess.style.display = 'none'; }
+      if (addAdminModal) addAdminModal.classList.add('active');
+    }
+
+    function closeAddAdminModal() {
+      if (addAdminModal) addAdminModal.classList.remove('active');
+    }
+
+    if (btnOpenAddAdmin) btnOpenAddAdmin.addEventListener('click', openAddAdminModal);
+    if (btnCloseAddAdmin) btnCloseAddAdmin.addEventListener('click', closeAddAdminModal);
+    if (btnCancelAddAdmin) btnCancelAddAdmin.addEventListener('click', closeAddAdminModal);
+
+    if (btnSubmitAddCoadmin) {
+      btnSubmitAddCoadmin.addEventListener('click', async () => {
+        if (addCoadminError) { addCoadminError.textContent = ''; addCoadminError.style.display = 'none'; }
+        if (addCoadminSuccess) { addCoadminSuccess.textContent = ''; addCoadminSuccess.style.display = 'none'; }
+
+        const name = String(inputCoadminName.value || '').trim();
+        const email = String(inputCoadminEmail.value || '').trim();
+        const role = selectCoadminRole ? selectCoadminRole.value : 'FINANCIAL_CO_ADMINISTRATOR';
+
+        if (!name) {
+          if (addCoadminError) { addCoadminError.textContent = 'Please enter the full name.'; addCoadminError.style.display = 'block'; }
+          return;
+        }
+        if (!email || !email.includes('@')) {
+          if (addCoadminError) { addCoadminError.textContent = 'Please enter a valid email address.'; addCoadminError.style.display = 'block'; }
+          return;
+        }
+
+        btnSubmitAddCoadmin.disabled = true;
+        btnSubmitAddCoadmin.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Authorizing...';
+
+        try {
+          const result = await sendBackendRequest({
+            action: 'addAdministrator',
+            sessionToken: state.adminSessionToken,
+            newName: name,
+            newEmail: email,
+            role: role
+          });
+
+          btnSubmitAddCoadmin.disabled = false;
+          btnSubmitAddCoadmin.innerHTML = 'Authorize Co-Admin';
+
+          if (result && result.success) {
+            if (addCoadminSuccess) {
+              addCoadminSuccess.textContent = result.message || 'Co-Administrator authorized successfully. An authorization email has been sent.';
+              addCoadminSuccess.style.display = 'block';
+            }
+            if (inputCoadminName) inputCoadminName.value = '';
+            if (inputCoadminEmail) inputCoadminEmail.value = '';
+          } else {
+            if (addCoadminError) {
+              addCoadminError.textContent = result.message || 'Unable to add co-administrator.';
+              addCoadminError.style.display = 'block';
+            }
+          }
+        } catch (err) {
+          btnSubmitAddCoadmin.disabled = false;
+          btnSubmitAddCoadmin.innerHTML = 'Authorize Co-Admin';
+          if (addCoadminError) {
+            addCoadminError.textContent = err.message || 'Network error.';
+            addCoadminError.style.display = 'block';
+          }
+        }
+      });
+    }
+
+    // ------------------------------------------------------------------------
+    // Step 13: Financial Report Modal (Real Database Records Only)
+    // ------------------------------------------------------------------------
+    const financialReportModal = document.getElementById('duesFinancialReportModal');
+    const btnOpenFinancialReport = document.getElementById('btn-dues-financial-report');
+    const btnCloseFinancialReport = document.getElementById('btnCloseFinancialReport');
+    const btnCloseFinancialReport2 = document.getElementById('btnCloseFinancialReport2');
+    const reportLoading = document.getElementById('financial-report-loading');
+    const reportContent = document.getElementById('financial-report-content');
+
+    function closeFinancialReportModal() {
+      if (financialReportModal) financialReportModal.classList.remove('active');
+    }
+
+    if (btnCloseFinancialReport) btnCloseFinancialReport.addEventListener('click', closeFinancialReportModal);
+    if (btnCloseFinancialReport2) btnCloseFinancialReport2.addEventListener('click', closeFinancialReportModal);
+
+    async function loadFinancialReport() {
+      if (financialReportModal) financialReportModal.classList.add('active');
+      if (reportLoading) {
+        reportLoading.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Calculating financial summary from verified records...';
+        reportLoading.style.display = 'block';
+      }
+      if (reportContent) reportContent.style.display = 'none';
+
+      try {
+        const result = await sendBackendRequest({
+          action: 'getFinancialReport',
+          sessionToken: state.adminSessionToken
+        });
+
+        if (result && result.success && result.report) {
+          const rep = result.report;
+          document.getElementById('rep-total-collected').textContent = `₹${(Number(rep.totalMoneyCollected) || 0).toFixed(2)}`;
+          document.getElementById('rep-verified-count').textContent = `${rep.verifiedCount || 0} verified transactions`;
+          document.getElementById('rep-dues-collected').textContent = `₹${(Number(rep.totalDuesCollected) || 0).toFixed(2)}`;
+          document.getElementById('rep-contributions-collected').textContent = rep.contributionsTracked === true
+            ? `₹${(Number(rep.totalContributionsCollected) || 0).toFixed(2)}`
+            : 'Not tracked';
+          document.getElementById('rep-upi-total').textContent = `₹${(Number(rep.totalUpiCollected) || 0).toFixed(2)}`;
+          document.getElementById('rep-cash-total').textContent = `₹${(Number(rep.totalCashCollected) || 0).toFixed(2)}`;
+          document.getElementById('rep-pending-amount').textContent = `₹${(Number(rep.totalPendingAmount) || 0).toFixed(2)}`;
+          document.getElementById('rep-pending-count').textContent = String(rep.pendingCount || 0);
+
+          const tbody = document.getElementById('rep-transactions-tbody');
+          if (tbody) {
+            tbody.replaceChildren();
+            if (Array.isArray(rep.verifiedPayments) && rep.verifiedPayments.length) {
+              rep.verifiedPayments.forEach(p => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #f1f5f9';
+
+                const tdId = document.createElement('td');
+                tdId.style.padding = '8px 10px';
+                tdId.style.fontWeight = '600';
+                tdId.textContent = p.paymentId || '';
+
+                const tdPayer = document.createElement('td');
+                tdPayer.style.padding = '8px 10px';
+                tdPayer.textContent = `${p.payer || ''} (${p.payerEmail || ''})`;
+
+                const tdMethod = document.createElement('td');
+                tdMethod.style.padding = '8px 10px';
+                tdMethod.textContent = p.paymentMethod || '';
+
+                const tdAmount = document.createElement('td');
+                tdAmount.style.padding = '8px 10px';
+                tdAmount.style.fontWeight = '600';
+                tdAmount.style.color = '#15803d';
+                tdAmount.textContent = `₹${(Number(p.totalAmount) || 0).toFixed(2)}`;
+
+                const tdDate = document.createElement('td');
+                tdDate.style.padding = '8px 10px';
+                tdDate.style.color = 'var(--text-muted)';
+                tdDate.textContent = p.approvedDate || p.paymentDate || '';
+
+                tr.append(tdId, tdPayer, tdMethod, tdAmount, tdDate);
+                tbody.appendChild(tr);
+              });
+            } else {
+              const emptyRow = document.createElement('tr');
+              const emptyCell = document.createElement('td');
+              emptyCell.colSpan = 5;
+              emptyCell.style.textAlign = 'center';
+              emptyCell.style.padding = '16px';
+              emptyCell.style.color = 'var(--text-muted)';
+              emptyCell.textContent = 'No verified collections recorded yet.';
+              emptyRow.appendChild(emptyCell);
+              tbody.appendChild(emptyRow);
+            }
+          }
+
+          if (reportLoading) reportLoading.style.display = 'none';
+          if (reportContent) reportContent.style.display = 'block';
+        } else {
+          if (reportLoading) {
+            const errorMessage = document.createElement('span');
+            errorMessage.style.color = 'var(--error-color)';
+            const icon = document.createElement('i');
+            icon.className = 'fa-solid fa-circle-exclamation';
+            icon.setAttribute('aria-hidden', 'true');
+            errorMessage.append(icon, document.createTextNode(` ${result.message || 'Unable to load financial report.'}`));
+            reportLoading.replaceChildren(errorMessage);
+          }
+        }
+      } catch (err) {
+        if (reportLoading) {
+          const errorMessage = document.createElement('span');
+          errorMessage.style.color = 'var(--error-color)';
+          const icon = document.createElement('i');
+          icon.className = 'fa-solid fa-circle-exclamation';
+          icon.setAttribute('aria-hidden', 'true');
+          errorMessage.append(icon, document.createTextNode(' Network error loading report.'));
+          reportLoading.replaceChildren(errorMessage);
+        }
+      }
+    }
+
+    if (btnOpenFinancialReport) btnOpenFinancialReport.addEventListener('click', loadFinancialReport);
+
     // Default dates
+    const savedToken = sessionStorage.getItem('lsuPaymentAdminSessionToken');
+    const savedRole = sessionStorage.getItem('lsuPaymentAdminRole');
+    if (savedToken) {
+      applyAdminRoleUI(savedRole);
+    }
     if (new URLSearchParams(window.location.search).get('admin') === 'finance') {
       showView('view-dues-admin-login');
     }

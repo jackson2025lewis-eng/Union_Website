@@ -493,4 +493,29 @@ for (const rows of [
   ok(audit.records.some(record => record.action === 'financial_payment_rejected' && record.outcome === 'SUCCESS'));
 }
 
+// Financial reports include only verified collected amounts and do not infer contribution totals.
+{
+  const finance = ['finance@example.com', 'Finance', 'FINANCIAL_CO_ADMINISTRATOR', 'ACTIVE', new Date(), 'SYSTEM', '', '', 'No', 0];
+  const f = fixture([finance]);
+  const now = f.now();
+  f.cache.put('LSU_PAYMENT_ADMIN_SESSION_finance-token', JSON.stringify({
+    email: finance[0], role: finance[2], issuedAt: now, createdAt: now
+  }), 900);
+  f.context.ensurePaymentSheets();
+  const payments = f.workbook.getSheetByName('Payments');
+  const allocations = f.workbook.getSheetByName('PaymentAllocations');
+  payments.appendRow(['PAY-VERIFIED', 'Payer', 'payer@example.com', 'CASH', 250, '2026-04-01', '', 'Treasurer', 'Officer', 'PAID / VERIFIED', new Date(), new Date(), finance[0], 'RCPT-1', '']);
+  payments.appendRow(['PAY-PENDING', 'Payer', 'payer@example.com', 'ONLINE / UPI', 100, '2026-04-02', 'UPI-2', '', '', 'PENDING VERIFICATION', new Date(), '', '', '', '']);
+  allocations.appendRow(['PAY-VERIFIED', 'payer@example.com', 'Payer', 'LSU-1', 200, 'PAID / VERIFIED']);
+  allocations.appendRow(['PAY-VERIFIED', 'member@example.com', 'Member', 'LSU-2', 50, 'PAID / VERIFIED']);
+
+  const result = f.context.getFinancialReport('finance-token');
+  equal(result.report.totalMoneyCollected, 250);
+  equal(result.report.totalDuesCollected, 250);
+  equal(result.report.totalPendingAmount, 100);
+  equal(result.report.verifiedCount, 1);
+  equal(result.report.contributionsTracked, false);
+  equal(result.report.totalContributionsCollected, 0);
+}
+
 console.log(`Phase 2 migration tests: ${assertions} assertions passed.`);
