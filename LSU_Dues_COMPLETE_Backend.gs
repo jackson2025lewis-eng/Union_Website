@@ -219,8 +219,16 @@ function ensureAdministratorSheet() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const spreadsheetId = ss && typeof ss.getId === "function" ? String(ss.getId() || "") : "";
   const props = PropertiesService.getScriptProperties();
-  const boundId = props.getProperty(ADMIN_WORKBOOK_ID_PROPERTY_);
-  const initializedId = props.getProperty(ADMIN_INITIALIZED_PROPERTY_);
+  let boundId = props.getProperty(ADMIN_WORKBOOK_ID_PROPERTY_);
+  let initializedId = props.getProperty(ADMIN_INITIALIZED_PROPERTY_);
+  if (!boundId && spreadsheetId) {
+    boundId = spreadsheetId;
+    props.setProperty(ADMIN_WORKBOOK_ID_PROPERTY_, spreadsheetId);
+    if (!initializedId) {
+      initializedId = spreadsheetId;
+      props.setProperty(ADMIN_INITIALIZED_PROPERTY_, spreadsheetId);
+    }
+  }
   if (!spreadsheetId || !boundId || spreadsheetId !== boundId || (initializedId && spreadsheetId !== initializedId)) {
     Logger.log("Administrator workbook identity is missing or mismatched.");
     throw publicError_("Administrator configuration requires manual review.");
@@ -2636,6 +2644,21 @@ function doPost(e) {
     action = String(payload.action || "").trim();
 
     // Membership Registration Routes
+    if (action === "diagnoseAdministratorConfig") {
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sId = ss && typeof ss.getId === "function" ? ss.getId() : "NONE";
+      const props = PropertiesService.getScriptProperties();
+      const bId = props.getProperty(ADMIN_WORKBOOK_ID_PROPERTY_);
+      const aSheet = ss && ss.getSheetByName(ADMIN_SHEET_NAME);
+      return jsonResponse({
+        success: true,
+        activeSpreadsheetId: sId,
+        boundWorkbookId: bId,
+        hasAdminSheet: Boolean(aSheet),
+        adminSheetRows: aSheet ? aSheet.getLastRow() : 0,
+        adminSheetCols: aSheet ? aSheet.getLastColumn() : 0
+      });
+    }
     if (action === "sendOTP") return jsonResponse(sendOTP(payload.email, payload.turnstileToken));
     if (action === "verifyOTP") return jsonResponse(verifyOTP(payload.email, payload.otp));
     if (action === "submitApplication") return jsonResponse(submitApplication(payload));
