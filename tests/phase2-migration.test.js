@@ -514,7 +514,7 @@ for (const rows of [
   equal(result.report.totalDuesCollected, 250);
   equal(result.report.totalPendingAmount, 100);
   equal(result.report.verifiedCount, 1);
-  equal(result.report.contributionsTracked, false);
+  equal(result.report.contributionsTracked, true);
   equal(result.report.totalContributionsCollected, 0);
 }
 

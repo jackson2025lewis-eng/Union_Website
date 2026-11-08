@@ -17,6 +17,12 @@ The website is built using a lightweight, static HTML/CSS architecture, ensuring
 ├── soa-leadership.html         # SOA Chapter leadership & history
 ├── cv-raman-leadership.html    # CV Raman Chapter leadership & history
 ├── kiit-leadership.html        # KIIT Chapter leadership & history
+├── pay-dues.html               # Member dues and event contribution portal
+├── pay-dues.js                 # Payment portal interactions and administration UI
+├── pay-dues.css                # Payment portal styles
+├── Code.gs                     # Google Apps Script web app backend
+├── LSU_Dues_COMPLETE_Backend.gs # Synchronized backend source copy
+├── tests/                      # Phase 2 and event contribution tests
 │
 ├── style.css                   # Main responsive stylesheet used across all pages
 ├── styles.css                  # (Legacy/Backup stylesheet)
@@ -39,6 +45,10 @@ The website is currently in a highly polished, production-ready state. Recent mi
 3. **Navigation**: Built a robust, mobile-friendly sidebar navigation system with a hamburger toggle and dropdown menus for local chapters.
 
 4. **Content Integration**: Successfully laid out and styled the core pages, including complex components like the Alumni Carousel, the History Timeline grid, and the responsive Announcements section.
+
+5. **Member Payments**: The payment portal supports monthly dues and event contributions. Contribution events can target Members, Leaders, or All; member categories are derived from the registered position, and only approved payments count as collected.
+
+The payment portal depends on its Google Apps Script backend and Google Sheets database. Backend changes in this repository have not been deployed to the live Apps Script project, and the test suite uses mocked Google services; validate the production workbook and Apps Script deployment separately before going live.
 
 # IMPROVEMENTS NEEDED
 

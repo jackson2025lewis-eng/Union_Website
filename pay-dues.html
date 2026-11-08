@@ -12,7 +12,7 @@
   </head>
   <body>
     <a href="#main-content" class="skip-link">Skip to Main Content</a>
-    
+
     <!-- Standard LSU Page Header -->
     <header class="page-header" role="banner" style="position: relative;">
       <div id="admin-trigger" style="position: absolute; top: 0; right: 0; width: 60px; height: 60px; z-index: 9999; cursor: default;" title=""></div>
@@ -158,29 +158,165 @@
           <div id="view-dues-choice" class="dues-view-section">
             <div class="dues-card">
               <h2>PAYMENT CATEGORY</h2>
-              <p class="dues-subtitle">How would you like to pay?</p>
+              <p class="dues-subtitle">Select what you would like to contribute towards:</p>
               
               <div class="dues-type-selection">
-                <button type="button" class="dues-btn-type" id="btn-pay-my-dues">
+                <button type="button" class="dues-btn-type" id="btn-choice-monthly-dues">
                   <div class="dues-btn-type-content">
-                    <h3>PAY MY DUES</h3>
-                    <p>Pay union dues for your own registered membership.</p>
+                    <h3>MONTHLY / ANNUAL DUES</h3>
+                    <p>Pay recurring union dues for yourself or on behalf of other members.</p>
                   </div>
-                  <i class="fa-solid fa-user dues-btn-type-icon"></i>
+                  <i class="fa-solid fa-receipt dues-btn-type-icon"></i>
                 </button>
 
-                <button type="button" class="dues-btn-type" id="btn-pay-other-members">
+                <button type="button" class="dues-btn-type" id="btn-choice-event-contributions">
                   <div class="dues-btn-type-content">
-                    <h3>PAY FOR OTHER MEMBERS</h3>
-                    <p>Pay union dues on behalf of one or two other registered members.</p>
+                    <h3>EVENT CONTRIBUTIONS</h3>
+                    <p>Contribute towards union events, celebrations, and special occasions.</p>
                   </div>
-                  <i class="fa-solid fa-users dues-btn-type-icon"></i>
+                  <i class="fa-solid fa-calendar-check dues-btn-type-icon"></i>
                 </button>
               </div>
 
-              <button type="button" id="btn-dues-back-to-otp" class="dues-btn-secondary dues-btn-block" style="margin-top: 10px;">
+              <!-- Sub-selection for dues when Monthly Dues is selected -->
+              <div id="dues-sub-selection" style="display: none; margin-top: 18px; border-top: 1px solid #e2e8f0; padding-top: 16px;">
+                <h4 style="margin: 0 0 10px; font-size: 0.95rem; color: var(--text-main);">Who are you paying dues for?</h4>
+                <div class="dues-type-selection">
+                  <button type="button" class="dues-btn-type" id="btn-pay-my-dues">
+                    <div class="dues-btn-type-content">
+                      <h3>PAY MY DUES</h3>
+                      <p>Pay union dues for your own registered membership.</p>
+                    </div>
+                    <i class="fa-solid fa-user dues-btn-type-icon"></i>
+                  </button>
+
+                  <button type="button" class="dues-btn-type" id="btn-pay-other-members">
+                    <div class="dues-btn-type-content">
+                      <h3>PAY FOR OTHER MEMBERS</h3>
+                      <p>Pay union dues on behalf of one or two other registered members.</p>
+                    </div>
+                    <i class="fa-solid fa-users dues-btn-type-icon"></i>
+                  </button>
+                </div>
+              </div>
+
+              <button type="button" id="btn-dues-back-to-otp" class="dues-btn-secondary dues-btn-block" style="margin-top: 14px;">
                 Back
               </button>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               VIEW: EVENT CONTRIBUTIONS LIST (MEMBER)
+               ========================================================= -->
+          <div id="view-event-contributions" class="dues-view-section">
+            <div class="dues-card" style="max-width: 780px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+                <div>
+                  <h2 style="margin: 0;">EVENT CONTRIBUTIONS</h2>
+                  <p class="dues-subtitle" style="margin: 4px 0 0;">Contribute to upcoming union occasions and programs.</p>
+                </div>
+                <div id="member-classification-badge-container">
+                  <span class="dues-badge dues-badge-target" id="member-registered-category-badge">Registered Member</span>
+                </div>
+              </div>
+
+              <div id="member-events-alert" class="dues-success-msg" style="display: none;"></div>
+              <div id="member-events-error" class="dues-error-msg" style="display: none;"></div>
+
+              <div id="member-events-loading" style="text-align: center; padding: 28px; color: var(--text-muted);">
+                <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                <p style="margin-top: 10px;">Loading active event contributions...</p>
+              </div>
+
+              <div id="member-events-list" class="dues-event-grid" style="display: none;"></div>
+
+              <button type="button" id="btn-event-back-to-choice" class="dues-btn-secondary dues-btn-block" style="margin-top: 20px;">
+                <i class="fa-solid fa-arrow-left"></i> Back to Payment Options
+              </button>
+            </div>
+          </div>
+
+          <!-- =========================================================
+               VIEW: EVENT CONTRIBUTION PAYMENT SETUP (MEMBER)
+               ========================================================= -->
+          <div id="view-event-payment-setup" class="dues-view-section">
+            <div class="dues-card" style="max-width: 640px;">
+              <h2 id="event-setup-title">CONTRIBUTE TO EVENT</h2>
+              <p class="dues-subtitle" id="event-setup-desc">Review your contribution details and select members to cover.</p>
+
+              <!-- Event Summary Banner -->
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; margin-bottom: 20px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+                  <div>
+                    <strong id="event-setup-event-name" style="font-size: 1.1rem; color: var(--text-main);"></strong>
+                    <div id="event-setup-event-date" style="font-size: 0.85rem; color: var(--text-muted); margin-top: 2px;"></div>
+                  </div>
+                  <span id="event-setup-target-badge" class="dues-badge dues-badge-target"></span>
+                </div>
+              </div>
+
+              <!-- Coverage Type -->
+              <div style="margin-bottom: 18px;">
+                <label style="display: block; font-size: 0.9rem; font-weight: 600; margin-bottom: 8px;">Who are you contributing for?</label>
+                <div style="display: flex; flex-direction: column; gap: 10px;">
+                  <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;">
+                    <input type="radio" name="event-payer-option" id="event-pay-self-only" value="SELF_ONLY" checked>
+                    <div>
+                      <strong>Contribute for myself only</strong>
+                      <div id="event-self-fee-label" style="font-size: 0.82rem; color: var(--text-muted);">Required contribution: ₹0.00</div>
+                    </div>
+                  </label>
+                  <label style="display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 10px 14px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff;">
+                    <input type="radio" name="event-payer-option" id="event-pay-multi" value="MULTI">
+                    <div>
+                      <strong>Contribute for myself and other registered members</strong>
+                      <div style="font-size: 0.82rem; color: var(--text-muted);">Cover up to two additional registered union members</div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Multi-member Entry Box -->
+              <div id="event-multi-members-container" style="display: none; border-top: 1px solid #e2e8f0; padding-top: 16px; margin-bottom: 18px;">
+                <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0;">Enter the registered email address of other members. Their contribution rate is determined by their registered position (Member or Leader).</p>
+
+                <!-- Member 1 -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                  <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Additional Member 1 Email</label>
+                  <div style="display: flex; gap: 8px;">
+                    <input type="email" id="event-other-email-1" class="dues-input" placeholder="e.g., student@example.com" style="margin: 0;">
+                    <button type="button" id="btn-verify-event-member-1" class="dues-btn-secondary" style="padding: 6px 14px; white-space: nowrap;">Verify</button>
+                  </div>
+                  <div id="event-other-result-1" style="margin-top: 6px; font-size: 0.85rem; display: none;"></div>
+                </div>
+
+                <!-- Member 2 -->
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 12px;">
+                  <label style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Additional Member 2 Email (Optional)</label>
+                  <div style="display: flex; gap: 8px;">
+                    <input type="email" id="event-other-email-2" class="dues-input" placeholder="e.g., colleague@example.com" style="margin: 0;">
+                    <button type="button" id="btn-verify-event-member-2" class="dues-btn-secondary" style="padding: 6px 14px; white-space: nowrap;">Verify</button>
+                  </div>
+                  <div id="event-other-result-2" style="margin-top: 6px; font-size: 0.85rem; display: none;"></div>
+                </div>
+              </div>
+
+              <!-- Total Summary Box -->
+              <div style="background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px 18px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <span style="font-size: 0.85rem; color: #1e40af; font-weight: 600; display: block;">Total Contribution Amount</span>
+                  <span id="event-total-members-count" style="font-size: 0.78rem; color: #1e40af;">Covering 1 member</span>
+                </div>
+                <strong id="event-total-amount-display" style="font-size: 1.5rem; color: #1e40af;">₹0.00</strong>
+              </div>
+
+              <div id="event-setup-error" class="dues-error-msg" style="margin-bottom: 14px; display: none;"></div>
+
+              <div style="display: flex; gap: 10px; justify-content: flex-end;">
+                <button type="button" id="btn-event-cancel-setup" class="dues-btn-secondary">Back to Events</button>
+                <button type="button" id="btn-event-proceed-payment" class="dues-btn-primary">Proceed to Payment</button>
+              </div>
             </div>
           </div>
 
@@ -694,18 +830,58 @@
                 </button>
               </div>
 
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
-                <h3 style="margin: 0; border: none; padding: 0;">PENDING DUES PAYMENTS</h3>
-                <button type="button" id="btn-refresh-pending-payments" class="dues-btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;">
-                  <i class="fa-solid fa-rotate-right"></i> Refresh
+              <div class="dues-tabs">
+                <button type="button" id="tab-admin-pending" class="dues-tab-btn active">
+                  <i class="fa-solid fa-clock-rotate-left"></i> Pending Payments Queue
+                </button>
+                <button type="button" id="tab-admin-events" class="dues-tab-btn">
+                  <i class="fa-solid fa-calendar-check"></i> Event Contributions Management
                 </button>
               </div>
 
-              <div id="admin-pending-alert" class="dues-success-msg" style="margin-bottom: 14px;"></div>
-              <div id="admin-pending-error" class="dues-error-msg" style="margin-bottom: 14px;"></div>
+              <!-- SECTION 1: PENDING PAYMENTS -->
+              <div id="sec-admin-pending">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+                  <h3 style="margin: 0; border: none; padding: 0;">PENDING PAYMENTS QUEUE</h3>
+                  <button type="button" id="btn-refresh-pending-payments" class="dues-btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;">
+                    <i class="fa-solid fa-rotate-right"></i> Refresh
+                  </button>
+                </div>
 
-              <div id="admin-pending-payments-list">
-                <!-- Dynamically populated payment cards or empty notice -->
+                <div id="admin-pending-alert" class="dues-success-msg" style="margin-bottom: 14px; display: none;"></div>
+                <div id="admin-pending-error" class="dues-error-msg" style="margin-bottom: 14px; display: none;"></div>
+
+                <div id="admin-pending-payments-list">
+                  <!-- Dynamically populated payment cards or empty notice -->
+                </div>
+              </div>
+
+              <!-- SECTION 2: EVENT CONTRIBUTIONS MANAGEMENT -->
+              <div id="sec-admin-events" style="display: none;">
+                <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 14px;">
+                  <div>
+                    <h3 style="margin: 0; border: none; padding: 0;">EVENT CONTRIBUTIONS & OCCASIONS</h3>
+                    <span style="font-size: 0.82rem; color: var(--text-muted);">Manage events, configure contribution amounts by member groups, and track collections.</span>
+                  </div>
+                  <div style="display: flex; gap: 8px;">
+                    <button type="button" id="btn-open-create-event" class="dues-btn-primary" style="padding: 6px 14px; font-size: 0.85rem;">
+                      <i class="fa-solid fa-plus"></i> Create Event
+                    </button>
+                    <button type="button" id="btn-refresh-admin-events" class="dues-btn-secondary" style="padding: 6px 12px; font-size: 0.85rem;">
+                      <i class="fa-solid fa-rotate-right"></i> Refresh
+                    </button>
+                  </div>
+                </div>
+
+                <div id="admin-events-alert" class="dues-success-msg" style="margin-bottom: 14px; display: none;"></div>
+                <div id="admin-events-error" class="dues-error-msg" style="margin-bottom: 14px; display: none;"></div>
+
+                <div id="admin-events-loading" style="text-align: center; padding: 24px; color: var(--text-muted);">
+                  <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                  <p style="margin-top: 10px;">Loading event contributions...</p>
+                </div>
+
+                <div id="admin-events-grid" class="dues-event-grid" style="display: none;"></div>
               </div>
             </div>
           </div>
@@ -759,6 +935,25 @@
                     <i class="fa-solid fa-clock-rotate-left" style="color: #f97316;"></i>
                     <strong> Pending:</strong> <span id="rep-pending-amount">₹0.00</span> (<span id="rep-pending-count">0</span>)
                   </div>
+                </div>
+
+                <!-- Event Contributions Breakdown Table -->
+                <h4 style="margin: 0 0 10px; font-size: 0.95rem; color: var(--text-main);">Event Contributions Breakdown</h4>
+                <div style="max-height: 160px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 18px;">
+                  <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem; text-align: left;">
+                    <thead style="background: #f1f5f9; position: sticky; top: 0;">
+                      <tr>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Event ID</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Occasion / Event Title</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Status</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Contributors</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Total Collected</th>
+                      </tr>
+                    </thead>
+                    <tbody id="rep-events-tbody">
+                      <tr><td colspan="5" style="text-align: center; padding: 12px; color: var(--text-muted);">No event contribution records.</td></tr>
+                    </tbody>
+                  </table>
                 </div>
 
                 <!-- Verified Transactions Table -->
@@ -824,6 +1019,167 @@
           </div>
 
 
+
+          <!-- CREATE EVENT MODAL -->
+          <div class="dues-modal-backdrop" id="duesCreateEventModal">
+            <div class="dues-modal-card" style="max-width: 540px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-calendar-plus" style="color: var(--primary-color); font-size: 1.3rem;"></i>
+                  <h3 style="margin: 0; font-size: 1.15rem; color: var(--text-main);">Create Event / Occasion</h3>
+                </div>
+                <button type="button" id="btnCloseCreateEvent" style="background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+              </div>
+
+              <div style="margin-bottom: 14px;">
+                <label for="create-event-title" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Event Title <span class="required-star">*</span></label>
+                <input type="text" id="create-event-title" class="dues-input" placeholder="e.g., Independence Day Celebration 2026" required>
+              </div>
+
+              <div style="margin-bottom: 14px;">
+                <label for="create-event-desc" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Description</label>
+                <textarea id="create-event-desc" class="dues-modal-textarea" style="height: 60px; margin-bottom: 0;" placeholder="Event purpose, program details, or venue..."></textarea>
+              </div>
+
+              <div style="margin-bottom: 14px;">
+                <label for="create-event-date" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Event Date <span class="required-star">*</span></label>
+                <input type="date" id="create-event-date" class="dues-input" required>
+              </div>
+
+              <div style="margin-bottom: 16px;">
+                <label for="create-event-target" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Target Group <span class="required-star">*</span></label>
+                <select id="create-event-target" class="dues-input">
+                  <option value="ALL">All (Members & Leaders)</option>
+                  <option value="MEMBERS">Members Only</option>
+                  <option value="LEADERS">Leaders Only</option>
+                </select>
+              </div>
+
+              <!-- Amount Inputs -->
+              <div id="create-amount-container" style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                <div id="create-all-amount-toggle" style="margin-bottom: 10px;">
+                  <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer;">
+                    <input type="checkbox" id="create-all-same-amount" checked>
+                    <span>Same contribution amount for both Members and Leaders</span>
+                  </label>
+                </div>
+
+                <div id="create-field-member-amount" style="margin-bottom: 8px;">
+                  <label for="create-member-amount" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Member Fee (₹) <span class="required-star">*</span></label>
+                  <input type="number" id="create-member-amount" class="dues-input" placeholder="e.g., 200" min="1" step="1">
+                </div>
+
+                <div id="create-field-leader-amount" style="display: none; margin-bottom: 4px;">
+                  <label for="create-leader-amount" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Leader Fee (₹) <span class="required-star">*</span></label>
+                  <input type="number" id="create-leader-amount" class="dues-input" placeholder="e.g., 500" min="1" step="1">
+                </div>
+              </div>
+
+              <div id="create-event-error" class="dues-error-msg" style="margin-bottom: 12px; display: none;"></div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" class="dues-btn-secondary" id="btnCancelCreateEvent">Cancel</button>
+                <button type="button" class="dues-btn-primary" id="btnSubmitCreateEvent">Create Event</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- EDIT EVENT MODAL -->
+          <div class="dues-modal-backdrop" id="duesEditEventModal">
+            <div class="dues-modal-card" style="max-width: 540px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-pen-to-square" style="color: var(--primary-color); font-size: 1.3rem;"></i>
+                  <h3 style="margin: 0; font-size: 1.15rem; color: var(--text-main);">Manage Event</h3>
+                </div>
+                <button type="button" id="btnCloseEditEvent" style="background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+              </div>
+
+              <input type="hidden" id="edit-event-id">
+
+              <div style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.82rem; color: #92400e;">
+                <i class="fa-solid fa-shield-halved"></i> <strong>Audit Safeguard:</strong> Fee modifications are preserved in the Event Audit log. Prior member payments remain valid at their submitted rates.
+              </div>
+
+              <div style="margin-bottom: 12px;">
+                <label for="edit-event-title" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Title</label>
+                <input type="text" id="edit-event-title" class="dues-input" required>
+              </div>
+
+              <div style="margin-bottom: 12px;">
+                <label for="edit-event-desc" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Description</label>
+                <textarea id="edit-event-desc" class="dues-modal-textarea" style="height: 60px; margin-bottom: 0;"></textarea>
+              </div>
+
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px;">
+                <div>
+                  <label for="edit-event-date" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Date</label>
+                  <input type="date" id="edit-event-date" class="dues-input" required>
+                </div>
+                <div>
+                  <label for="edit-event-status" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Status</label>
+                  <select id="edit-event-status" class="dues-input">
+                    <option value="ACTIVE">Active (Accepting Payments)</option>
+                    <option value="CLOSED">Closed (Payments Suspended)</option>
+                    <option value="ARCHIVED">Archived</option>
+                  </select>
+                </div>
+              </div>
+
+              <!-- Edit Amounts -->
+              <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 12px; margin-bottom: 16px;">
+                <div id="edit-field-member-amount" style="margin-bottom: 8px;">
+                  <label for="edit-member-amount" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Member Fee (₹)</label>
+                  <input type="number" id="edit-member-amount" class="dues-input" min="1" step="1">
+                </div>
+                <div id="edit-field-leader-amount" style="margin-bottom: 4px;">
+                  <label for="edit-leader-amount" style="display: block; font-size: 0.85rem; font-weight: 600; margin-bottom: 4px;">Leader Fee (₹)</label>
+                  <input type="number" id="edit-leader-amount" class="dues-input" min="1" step="1">
+                </div>
+              </div>
+
+              <div id="edit-event-error" class="dues-error-msg" style="margin-bottom: 12px; display: none;"></div>
+
+              <div style="display: flex; justify-content: flex-end; gap: 8px;">
+                <button type="button" class="dues-btn-secondary" id="btnCancelEditEvent">Cancel</button>
+                <button type="button" class="dues-btn-primary" id="btnSubmitEditEvent">Save Changes</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- EVENT AUDIT MODAL -->
+          <div class="dues-modal-backdrop" id="duesEventAuditModal">
+            <div class="dues-modal-card" style="max-width: 660px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <i class="fa-solid fa-clock-rotate-left" style="color: var(--primary-color); font-size: 1.3rem;"></i>
+                  <h3 style="margin: 0; font-size: 1.15rem; color: var(--text-main);">Event Fee & Change Audit History</h3>
+                </div>
+                <button type="button" id="btnCloseEventAudit" style="background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+              </div>
+
+              <div style="max-height: 280px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px;">
+                <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem; text-align: left;">
+                  <thead style="background: #f1f5f9; position: sticky; top: 0;">
+                    <tr>
+                      <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Timestamp</th>
+                      <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Administrator</th>
+                      <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Action</th>
+                      <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Fee Changes</th>
+                      <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Details</th>
+                    </tr>
+                  </thead>
+                  <tbody id="event-audit-tbody">
+                    <tr><td colspan="5" style="text-align: center; padding: 16px; color: var(--text-muted);">No audit entries found.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div style="margin-top: 16px; display: flex; justify-content: flex-end;">
+                <button type="button" class="dues-btn-secondary" id="btnCloseEventAudit2">Close</button>
+              </div>
+            </div>
+          </div>
 
           <!-- REJECTION REASON MODAL -->
           <div class="dues-modal-backdrop" id="duesRejectionModal">

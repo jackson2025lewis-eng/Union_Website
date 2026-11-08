@@ -60,14 +60,19 @@
   // --------------------------------------------------------------------------
   const state = {
     memberSessionToken: sessionStorage.getItem('lsuDueMemberSessionToken') || null,
-    payer: null, // { email, name, membershipId }
-    paymentChoice: 'PAY_MY_DUES', // 'PAY_MY_DUES' | 'PAY_FOR_OTHER_MEMBERS'
+    payer: null, // { email, name, membershipId, position, category }
+    paymentChoice: 'PAY_MY_DUES', // 'PAY_MY_DUES' | 'PAY_FOR_OTHER_MEMBERS' | 'EVENT_CONTRIBUTION'
+    currentEvent: null, // active event for contribution
+    eventOtherMembers: [null, null], // verified other members for event
     otherMemberCount: 1,
     verifiedMembers: [], // [ { email, name, membershipId, amount } ]
     selectedMethod: 'ONLINE / UPI', // 'ONLINE / UPI' | 'CASH'
     adminSessionToken: sessionStorage.getItem('lsuPaymentAdminSessionToken') || null,
+    adminRole: sessionStorage.getItem('lsuPaymentAdminRole') || null,
     pendingPayments: [],
-    currentRejectingPaymentId: null
+    currentRejectingPaymentId: null,
+    adminEvents: [],
+    eventAudits: []
   };
 
   document.addEventListener('DOMContentLoaded', () => {
@@ -222,11 +227,42 @@
     }
 
     // ------------------------------------------------------------------------
-    // Step 2: Payment Choice (Pay My Dues vs Pay for Other Members)
+    // Step 2: Payment Choice (Monthly Dues vs Event Contributions)
     // ------------------------------------------------------------------------
+    const btnChoiceMonthlyDues = document.getElementById('btn-choice-monthly-dues');
+    const btnChoiceEventContributions = document.getElementById('btn-choice-event-contributions');
+    const duesSubSelection = document.getElementById('dues-sub-selection');
     const btnPayMyDues = document.getElementById('btn-pay-my-dues');
     const btnPayOtherMembers = document.getElementById('btn-pay-other-members');
     const btnBackToOtp = document.getElementById('btn-dues-back-to-otp');
+    const btnEventBackToChoice = document.getElementById('btn-event-back-to-choice');
+    const btnEventCancelSetup = document.getElementById('btn-event-cancel-setup');
+
+    if (btnChoiceMonthlyDues && duesSubSelection) {
+      btnChoiceMonthlyDues.addEventListener('click', () => {
+        duesSubSelection.style.display = 'block';
+        duesSubSelection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      });
+    }
+
+    if (btnChoiceEventContributions) {
+      btnChoiceEventContributions.addEventListener('click', () => {
+        loadMemberEvents();
+        showView('view-event-contributions');
+      });
+    }
+
+    if (btnEventBackToChoice) {
+      btnEventBackToChoice.addEventListener('click', () => {
+        showView('view-dues-choice');
+      });
+    }
+
+    if (btnEventCancelSetup) {
+      btnEventCancelSetup.addEventListener('click', () => {
+        showView('view-event-contributions');
+      });
+    }
 
     if (btnPayMyDues) {
       btnPayMyDues.addEventListener('click', () => {
@@ -257,6 +293,380 @@
     if (btnBackToOtp) {
       btnBackToOtp.addEventListener('click', () => {
         showView('view-dues-otp');
+      });
+    }
+
+    // ------------------------------------------------------------------------
+    // Member Event Contributions Controller
+    // ------------------------------------------------------------------------
+    async function loadMemberEvents() {
+      const loadingEl = document.getElementById('member-events-loading');
+      const listEl = document.getElementById('member-events-list');
+      const alertEl = document.getElementById('member-events-alert');
+      const errorEl = document.getElementById('member-events-error');
+      const catBadge = document.getElementById('member-registered-category-badge');
+
+      if (alertEl) { alertEl.style.display = 'none'; alertEl.textContent = ''; }
+      if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+      if (loadingEl) loadingEl.style.display = 'block';
+      if (listEl) { listEl.style.display = 'none'; listEl.replaceChildren(); }
+
+      try {
+        const result = await sendBackendRequest({
+          action: 'getEvents',
+          memberSessionToken: state.memberSessionToken
+        });
+
+        if (loadingEl) loadingEl.style.display = 'none';
+
+        if (result && result.success) {
+          const category = (result.member && result.member.category) || result.memberCategory ||
+            (state.payer && state.payer.category) || 'MEMBER';
+          if (catBadge) {
+            catBadge.textContent = category === 'LEADER' ? 'Registered Leader / Executive' : 'Registered Member';
+            catBadge.className = category === 'LEADER' ? 'dues-badge dues-badge-leader' : 'dues-badge dues-badge-member';
+          }
+
+          if (state.payer) {
+            state.payer.category = category;
+            state.payer.position = (result.member && result.member.position) || result.memberPosition || state.payer.position;
+          }
+
+          const events = Array.isArray(result.events) ? result.events : [];
+          if (!events.length) {
+            if (listEl) {
+              listEl.style.display = 'block';
+              listEl.innerHTML = '<div style="text-align: center; padding: 24px; color: var(--text-muted); grid-column: 1 / -1;">No active event contributions scheduled at this time.</div>';
+            }
+            return;
+          }
+
+          if (listEl) {
+            listEl.style.display = 'grid';
+            events.forEach(evt => {
+              const card = document.createElement('div');
+              card.className = 'dues-event-card';
+
+              const header = document.createElement('div');
+              header.className = 'dues-event-card-header';
+              const title = document.createElement('h3');
+              title.className = 'dues-event-title';
+              title.textContent = evt.title || 'Untitled Event';
+              const badge = document.createElement('span');
+              badge.className = 'dues-badge dues-badge-target';
+              badge.textContent = `Target: ${evt.targetGroup || 'ALL'}`;
+              header.append(title, badge);
+
+              const desc = document.createElement('p');
+              desc.className = 'dues-event-desc';
+              desc.textContent = evt.description || 'No description provided.';
+
+              const dateRow = document.createElement('div');
+              dateRow.style.fontSize = '0.82rem';
+              dateRow.style.color = 'var(--text-muted)';
+              dateRow.style.marginBottom = '12px';
+              dateRow.innerHTML = `<i class="fa-regular fa-calendar"></i> <strong>Date:</strong> ${evt.eventDate || 'TBD'}`;
+
+              const feeRow = document.createElement('div');
+              feeRow.className = 'dues-event-fees';
+              const reqAmount = Number(evt.requiredAmount) || 0;
+              feeRow.innerHTML = `<div><div class="fee-label">Your Contribution Rate</div><div class="fee-amount">₹${reqAmount.toFixed(2)}</div></div>`;
+
+              const footer = document.createElement('div');
+              footer.className = 'dues-event-card-footer';
+
+              if (evt.myPaymentStatus === 'PAID / VERIFIED') {
+                footer.innerHTML = '<span class="dues-badge dues-badge-active" style="background: #dcfce7; color: #15803d; padding: 8px 12px; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> Paid (Approved)</span>';
+              } else if (evt.myPaymentStatus === 'PENDING VERIFICATION') {
+                footer.innerHTML = '<span class="dues-badge" style="background: #fef3c7; color: #b45309; padding: 8px 12px; font-weight: 600;"><i class="fa-solid fa-clock"></i> Payment Pending Approval</span>';
+              } else if (!evt.isEligible) {
+                footer.innerHTML = '<span class="dues-badge dues-badge-closed">Not eligible for this target group</span>';
+              } else if (evt.status !== 'ACTIVE') {
+                footer.innerHTML = '<span class="dues-badge dues-badge-closed">Contributions closed</span>';
+              } else {
+                const contributeBtn = document.createElement('button');
+                contributeBtn.type = 'button';
+                contributeBtn.className = 'dues-btn-primary';
+                contributeBtn.style.padding = '8px 16px';
+                contributeBtn.style.fontSize = '0.9rem';
+                contributeBtn.innerHTML = '<i class="fa-solid fa-hand-holding-dollar"></i> Contribute Now';
+                contributeBtn.addEventListener('click', () => {
+                  setupEventPayment(evt);
+                });
+                footer.appendChild(contributeBtn);
+              }
+
+              card.append(header, desc, dateRow, feeRow, footer);
+              listEl.appendChild(card);
+            });
+          }
+        } else {
+          if (errorEl) {
+            errorEl.textContent = result.message || 'Unable to load event contributions.';
+            errorEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (errorEl) {
+          errorEl.textContent = err.message || 'Network error loading events.';
+          errorEl.style.display = 'block';
+        }
+      }
+    }
+
+    function setupEventPayment(evt) {
+      state.currentEvent = evt;
+      state.eventOtherMembers = [null, null];
+
+      const nameEl = document.getElementById('event-setup-event-name');
+      const dateEl = document.getElementById('event-setup-event-date');
+      const badgeEl = document.getElementById('event-setup-target-badge');
+      const feeLabel = document.getElementById('event-self-fee-label');
+
+      if (nameEl) nameEl.textContent = evt.title;
+      if (dateEl) dateEl.innerHTML = `<i class="fa-regular fa-calendar"></i> Event Date: <strong>${evt.eventDate}</strong>`;
+      if (badgeEl) badgeEl.textContent = `Target: ${evt.targetGroup}`;
+
+      const selfFee = Number(evt.requiredAmount) || 0;
+      if (feeLabel) feeLabel.textContent = `Required contribution: ₹${selfFee.toFixed(2)}`;
+
+      const radioSelf = document.getElementById('event-pay-self-only');
+      if (radioSelf) radioSelf.checked = true;
+
+      const multiContainer = document.getElementById('event-multi-members-container');
+      if (multiContainer) multiContainer.style.display = 'none';
+
+      const email1Input = document.getElementById('event-other-email-1');
+      const email2Input = document.getElementById('event-other-email-2');
+      const res1 = document.getElementById('event-other-result-1');
+      const res2 = document.getElementById('event-other-result-2');
+      if (email1Input) email1Input.value = '';
+      if (email2Input) email2Input.value = '';
+      if (res1) { res1.textContent = ''; res1.style.display = 'none'; }
+      if (res2) { res2.textContent = ''; res2.style.display = 'none'; }
+
+      clearError('event-setup-error');
+      updateEventPaymentTotals();
+      showView('view-event-payment-setup');
+    }
+
+    function updateEventPaymentTotals() {
+      if (!state.currentEvent) return;
+
+      const isMulti = document.getElementById('event-pay-multi')?.checked;
+      const selfFee = Number(state.currentEvent.requiredAmount) || 0;
+
+      let total = selfFee;
+      let count = 1;
+
+      if (isMulti) {
+        state.eventOtherMembers.forEach((m) => {
+          if (m && m.amount) {
+            total += Number(m.amount) || 0;
+            count++;
+          }
+        });
+      }
+
+      const countDisplay = document.getElementById('event-total-members-count');
+      const amountDisplay = document.getElementById('event-total-amount-display');
+
+      if (countDisplay) {
+        countDisplay.textContent = count === 1 ? 'Covering 1 member (You)' : `Covering ${count} members`;
+      }
+      if (amountDisplay) {
+        amountDisplay.textContent = `₹${total.toFixed(2)}`;
+      }
+    }
+
+    // Toggle radio in event payment setup
+    document.querySelectorAll('input[name="event-payer-option"]').forEach(radio => {
+      radio.addEventListener('change', () => {
+        const isMulti = document.getElementById('event-pay-multi')?.checked;
+        const multiContainer = document.getElementById('event-multi-members-container');
+        if (multiContainer) multiContainer.style.display = isMulti ? 'block' : 'none';
+        updateEventPaymentTotals();
+      });
+    });
+
+    // Verification handlers for additional members in event
+    async function verifyEventAdditionalMember(index) {
+      const emailInput = document.getElementById(`event-other-email-${index}`);
+      const resultDiv = document.getElementById(`event-other-result-${index}`);
+      const verifyBtn = document.getElementById(`btn-verify-event-member-${index}`);
+
+      const rawEmail = emailInput ? emailInput.value : '';
+      const email = extractEmail(rawEmail);
+
+      if (!email) {
+        if (resultDiv) {
+          resultDiv.style.display = 'block';
+          resultDiv.style.color = 'var(--error-color)';
+          resultDiv.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Please enter a valid registered email address.';
+        }
+        return;
+      }
+
+      if (state.payer && state.payer.email && email.toLowerCase() === state.payer.email.toLowerCase()) {
+        if (resultDiv) {
+          resultDiv.style.display = 'block';
+          resultDiv.style.color = 'var(--error-color)';
+          resultDiv.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> You are already included as the primary contributor.';
+        }
+        return;
+      }
+
+      const otherIndex = index === 1 ? 2 : 1;
+      const otherMember = state.eventOtherMembers[otherIndex - 1];
+      if (otherMember && otherMember.email && otherMember.email.toLowerCase() === email.toLowerCase()) {
+        if (resultDiv) {
+          resultDiv.style.display = 'block';
+          resultDiv.style.color = 'var(--error-color)';
+          resultDiv.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> This member has already been added in the other field.';
+        }
+        return;
+      }
+
+      if (verifyBtn) {
+        verifyBtn.disabled = true;
+        verifyBtn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      }
+
+      try {
+        const res = await sendBackendRequest({
+          action: 'getDuePaymentData',
+          sessionToken: state.memberSessionToken,
+          email: email
+        });
+
+        if (verifyBtn) {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = 'Verify';
+        }
+
+        if (res && res.success && res.member) {
+          const member = res.member;
+          const pos = String(member.position || '').trim();
+          const isLeader = pos !== 'Member';
+          const category = isLeader ? 'LEADER' : 'MEMBER';
+
+          const target = (state.currentEvent.targetGroup || 'ALL').toUpperCase();
+          if (target === 'LEADERS' && !isLeader) {
+            if (resultDiv) {
+              resultDiv.style.display = 'block';
+              resultDiv.style.color = 'var(--error-color)';
+              resultDiv.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> This event is restricted to Leaders. ${member.name} is registered as "${pos || 'Member'}".`;
+            }
+            state.eventOtherMembers[index - 1] = null;
+            updateEventPaymentTotals();
+            return;
+          }
+          if (target === 'MEMBERS' && isLeader) {
+            if (resultDiv) {
+              resultDiv.style.display = 'block';
+              resultDiv.style.color = 'var(--error-color)';
+              resultDiv.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> This event is restricted to regular Members. ${member.name} is registered as "${pos}".`;
+            }
+            state.eventOtherMembers[index - 1] = null;
+            updateEventPaymentTotals();
+            return;
+          }
+
+          const fee = isLeader ? (Number(state.currentEvent.leaderAmount) || Number(state.currentEvent.memberAmount) || 0) : (Number(state.currentEvent.memberAmount) || 0);
+
+          state.eventOtherMembers[index - 1] = {
+            email: member.email,
+            name: member.name,
+            membershipId: member.membershipId || '',
+            position: pos,
+            category: category,
+            amount: fee
+          };
+
+          if (resultDiv) {
+            resultDiv.style.display = 'block';
+            resultDiv.style.color = '#15803d';
+            resultDiv.innerHTML = `<i class="fa-solid fa-circle-check"></i> <strong>${member.name}</strong> (${pos || 'Member'}) — Required Fee: <strong>₹${fee.toFixed(2)}</strong>`;
+          }
+          updateEventPaymentTotals();
+        } else {
+          state.eventOtherMembers[index - 1] = null;
+          if (resultDiv) {
+            resultDiv.style.display = 'block';
+            resultDiv.style.color = 'var(--error-color)';
+            resultDiv.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${res.message || 'Member not found in verified registry.'}`;
+          }
+          updateEventPaymentTotals();
+        }
+      } catch (err) {
+        if (verifyBtn) {
+          verifyBtn.disabled = false;
+          verifyBtn.textContent = 'Verify';
+        }
+        state.eventOtherMembers[index - 1] = null;
+        if (resultDiv) {
+          resultDiv.style.display = 'block';
+          resultDiv.style.color = 'var(--error-color)';
+          resultDiv.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> Network error verifying member.';
+        }
+        updateEventPaymentTotals();
+      }
+    }
+
+    const btnVerifyEvt1 = document.getElementById('btn-verify-event-member-1');
+    const btnVerifyEvt2 = document.getElementById('btn-verify-event-member-2');
+    if (btnVerifyEvt1) btnVerifyEvt1.addEventListener('click', () => verifyEventAdditionalMember(1));
+    if (btnVerifyEvt2) btnVerifyEvt2.addEventListener('click', () => verifyEventAdditionalMember(2));
+
+    const btnProceedEventPayment = document.getElementById('btn-event-proceed-payment');
+    if (btnProceedEventPayment) {
+      btnProceedEventPayment.addEventListener('click', () => {
+        clearError('event-setup-error');
+        if (!state.currentEvent) {
+          showError('event-setup-error', 'No event selected.');
+          return;
+        }
+
+        const isMulti = document.getElementById('event-pay-multi')?.checked;
+        const selfFee = Number(state.currentEvent.requiredAmount) || 0;
+
+        const list = [
+          {
+            email: state.payer.email,
+            name: state.payer.name,
+            membershipId: state.payer.membershipId || '',
+            amount: selfFee
+          }
+        ];
+
+        if (isMulti) {
+          const email1 = extractEmail(document.getElementById('event-other-email-1')?.value);
+          const email2 = extractEmail(document.getElementById('event-other-email-2')?.value);
+
+          if (email1 && !state.eventOtherMembers[0]) {
+            showError('event-setup-error', 'Please verify Member 1 or clear the email field before proceeding.');
+            return;
+          }
+          if (email2 && !state.eventOtherMembers[1]) {
+            showError('event-setup-error', 'Please verify Member 2 or clear the email field before proceeding.');
+            return;
+          }
+          if (!email1 && !email2) {
+            showError('event-setup-error', 'Please enter and verify at least one additional member, or choose "Contribute for myself only".');
+            return;
+          }
+
+          state.eventOtherMembers.forEach(m => {
+            if (m) list.push(m);
+          });
+        }
+
+        state.paymentChoice = 'EVENT_CONTRIBUTION';
+        state.verifiedMembers = list;
+
+        renderPaymentSummary();
+        showView('view-dues-payment');
       });
     }
 
@@ -525,7 +935,9 @@
     }
 
     function handleBackFromPayment() {
-      if (state.paymentChoice === 'PAY_FOR_OTHER_MEMBERS') {
+      if (state.paymentChoice === 'EVENT_CONTRIBUTION') {
+        showView('view-event-payment-setup');
+      } else if (state.paymentChoice === 'PAY_FOR_OTHER_MEMBERS') {
         showView('view-dues-others');
       } else {
         showView('view-dues-self-amount');
@@ -567,16 +979,30 @@
         return;
       }
 
-      let payload = {
-        action: 'submitDuePayment',
-        sessionToken: state.memberSessionToken,
-        requestId: 'REQ-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-        paymentChoice: state.paymentChoice,
-        members: membersPayload,
-        totalAmount: totalAmount,
-        paymentMethod: method,
-        confirmed: true
-      };
+      let payload;
+      if (state.paymentChoice === 'EVENT_CONTRIBUTION') {
+        payload = {
+          action: 'submitContributionPayment',
+          sessionToken: state.memberSessionToken,
+          requestId: 'REQ-EVT-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+          eventId: state.currentEvent ? state.currentEvent.eventId : '',
+          members: membersPayload,
+          totalAmount: totalAmount,
+          paymentMethod: method,
+          confirmed: true
+        };
+      } else {
+        payload = {
+          action: 'submitDuePayment',
+          sessionToken: state.memberSessionToken,
+          requestId: 'REQ-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+          paymentChoice: state.paymentChoice,
+          members: membersPayload,
+          totalAmount: totalAmount,
+          paymentMethod: method,
+          confirmed: true
+        };
+      }
 
       if (method === 'ONLINE / UPI') {
         const upiRef = String(document.getElementById('dues-upi-ref').value || '').trim();
@@ -796,7 +1222,7 @@
       if (errorEl) errorEl.style.display = 'none';
 
       if (!container) return;
-      container.innerHTML = '<div style="text-align: center; padding: 24px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><p style="margin-top: 10px;">Loading pending dues payments...</p></div>';
+      container.innerHTML = '<div style="text-align: center; padding: 24px; color: var(--text-muted);"><i class="fa-solid fa-spinner fa-spin fa-2x"></i><p style="margin-top: 10px;">Loading pending payments...</p></div>';
 
       const result = await sendBackendRequest({
         action: 'getPendingDuePayments',
@@ -846,6 +1272,466 @@
       btnRefreshPending.addEventListener('click', loadPendingDuePayments);
     }
 
+    // Admin Dashboard Tabs
+    const tabAdminPending = document.getElementById('tab-admin-pending');
+    const tabAdminEvents = document.getElementById('tab-admin-events');
+    const secAdminPending = document.getElementById('sec-admin-pending');
+    const secAdminEvents = document.getElementById('sec-admin-events');
+
+    if (tabAdminPending && tabAdminEvents && secAdminPending && secAdminEvents) {
+      tabAdminPending.addEventListener('click', () => {
+        tabAdminPending.classList.add('active');
+        tabAdminEvents.classList.remove('active');
+        secAdminPending.style.display = 'block';
+        secAdminEvents.style.display = 'none';
+      });
+
+      tabAdminEvents.addEventListener('click', () => {
+        tabAdminEvents.classList.add('active');
+        tabAdminPending.classList.remove('active');
+        secAdminPending.style.display = 'none';
+        secAdminEvents.style.display = 'block';
+        loadAdminEvents();
+      });
+    }
+
+    const btnRefreshAdminEvents = document.getElementById('btn-refresh-admin-events');
+    if (btnRefreshAdminEvents) {
+      btnRefreshAdminEvents.addEventListener('click', loadAdminEvents);
+    }
+
+    // ------------------------------------------------------------------------
+    // Admin Event Management Controller (Financial Admins / Chief Admin)
+    // ------------------------------------------------------------------------
+    async function loadAdminEvents() {
+      const loadingEl = document.getElementById('admin-events-loading');
+      const gridEl = document.getElementById('admin-events-grid');
+      const alertEl = document.getElementById('admin-events-alert');
+      const errorEl = document.getElementById('admin-events-error');
+
+      if (alertEl) { alertEl.style.display = 'none'; alertEl.textContent = ''; }
+      if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+      if (loadingEl) loadingEl.style.display = 'block';
+      if (gridEl) { gridEl.style.display = 'none'; gridEl.replaceChildren(); }
+
+      try {
+        const result = await sendBackendRequest({
+          action: 'getEvents',
+          sessionToken: state.adminSessionToken
+        });
+
+        if (loadingEl) loadingEl.style.display = 'none';
+
+        if (result && result.success) {
+          state.adminEvents = Array.isArray(result.events) ? result.events : [];
+          state.eventAudits = Array.isArray(result.audits) ? result.audits :
+            (Array.isArray(result.eventAudits) ? result.eventAudits : []);
+
+          if (!state.adminEvents.length) {
+            if (gridEl) {
+              gridEl.style.display = 'block';
+              gridEl.innerHTML = '<div style="text-align: center; padding: 24px; color: var(--text-muted); grid-column: 1 / -1;">No events created yet. Click \'Create Event\' above to create an event.</div>';
+            }
+            return;
+          }
+
+          if (gridEl) {
+            gridEl.style.display = 'grid';
+            state.adminEvents.forEach(evt => {
+              const card = document.createElement('div');
+              card.className = 'dues-event-card';
+
+              const header = document.createElement('div');
+              header.className = 'dues-event-card-header';
+              const title = document.createElement('h3');
+              title.className = 'dues-event-title';
+              title.textContent = evt.title || 'Untitled';
+
+              let statusBadgeClass = 'dues-badge-active';
+              if (evt.status === 'CLOSED') statusBadgeClass = 'dues-badge-closed';
+              if (evt.status === 'ARCHIVED') statusBadgeClass = 'dues-badge-archived';
+
+              const badge = document.createElement('span');
+              badge.className = `dues-badge ${statusBadgeClass}`;
+              badge.textContent = evt.status || 'ACTIVE';
+              header.append(title, badge);
+
+              const desc = document.createElement('p');
+              desc.className = 'dues-event-desc';
+              desc.textContent = evt.description || 'No description provided.';
+
+              const metaRow = document.createElement('div');
+              metaRow.style.fontSize = '0.82rem';
+              metaRow.style.color = 'var(--text-muted)';
+              metaRow.style.marginBottom = '10px';
+              metaRow.innerHTML = `<strong>ID:</strong> ${evt.eventId} | <i class="fa-regular fa-calendar"></i> ${evt.eventDate || 'N/A'} | <strong>Target:</strong> ${evt.targetGroup || 'ALL'}`;
+
+              const feeRow = document.createElement('div');
+              feeRow.className = 'dues-event-fees';
+              feeRow.innerHTML = `
+                <div>
+                  <div class="fee-label">Member Fee</div>
+                  <div class="fee-amount">₹${(Number(evt.memberAmount) || 0).toFixed(2)}</div>
+                </div>
+                <div>
+                  <div class="fee-label">Leader Fee</div>
+                  <div class="fee-amount">₹${(Number(evt.leaderAmount) || 0).toFixed(2)}</div>
+                </div>
+              `;
+
+              const statsRow = document.createElement('div');
+              statsRow.style.background = '#f8fafc';
+              statsRow.style.border = '1px solid #e2e8f0';
+              statsRow.style.borderRadius = '6px';
+              statsRow.style.padding = '8px 12px';
+              statsRow.style.marginBottom = '12px';
+              statsRow.style.fontSize = '0.85rem';
+              statsRow.style.display = 'flex';
+              statsRow.style.justifyContent = 'space-between';
+              statsRow.innerHTML = `
+                <span><i class="fa-solid fa-users" style="color: var(--primary-color);"></i> <strong>${(Number(evt.verifiedContributors) || 0) + (Number(evt.pendingContributors) || 0)}</strong> contributors</span>
+                <span style="color: #15803d; font-weight: 600;"><i class="fa-solid fa-coins"></i> Approved ₹${(Number(evt.totalCollected) || 0).toFixed(2)}</span>
+                <span style="color: #b45309; font-weight: 600;"><i class="fa-solid fa-clock"></i> Pending ₹${(Number(evt.pendingAmount) || 0).toFixed(2)}</span>
+              `;
+
+              const footer = document.createElement('div');
+              footer.className = 'dues-event-card-footer';
+
+              const editBtn = document.createElement('button');
+              editBtn.type = 'button';
+              editBtn.className = 'dues-btn-secondary';
+              editBtn.style.padding = '6px 12px';
+              editBtn.style.fontSize = '0.85rem';
+              editBtn.innerHTML = '<i class="fa-solid fa-pen-to-square"></i> Edit';
+              editBtn.addEventListener('click', () => openEditEventModal(evt));
+
+              const auditBtn = document.createElement('button');
+              auditBtn.type = 'button';
+              auditBtn.className = 'dues-btn-secondary';
+              auditBtn.style.padding = '6px 12px';
+              auditBtn.style.fontSize = '0.85rem';
+              auditBtn.innerHTML = '<i class="fa-solid fa-clock-rotate-left"></i> Audit';
+              auditBtn.addEventListener('click', () => openEventAuditModal(evt.eventId));
+
+              footer.append(editBtn, auditBtn);
+              card.append(header, desc, metaRow, feeRow, statsRow, footer);
+              gridEl.appendChild(card);
+            });
+          }
+        } else {
+          if (errorEl) {
+            errorEl.textContent = result.message || 'Unable to load events.';
+            errorEl.style.display = 'block';
+          }
+        }
+      } catch (err) {
+        if (loadingEl) loadingEl.style.display = 'none';
+        if (errorEl) {
+          errorEl.textContent = err.message || 'Network error loading events.';
+          errorEl.style.display = 'block';
+        }
+      }
+    }
+
+    // Create Event Modal
+    const createEventModal = document.getElementById('duesCreateEventModal');
+    const btnOpenCreateEvent = document.getElementById('btn-open-create-event');
+    const btnCloseCreateEvent = document.getElementById('btnCloseCreateEvent');
+    const btnCancelCreateEvent = document.getElementById('btnCancelCreateEvent');
+    const btnSubmitCreateEvent = document.getElementById('btnSubmitCreateEvent');
+    const selectCreateTarget = document.getElementById('create-event-target');
+    const chkSameAmount = document.getElementById('create-all-same-amount');
+    const fieldLeaderAmount = document.getElementById('create-field-leader-amount');
+    const fieldMemberAmount = document.getElementById('create-field-member-amount');
+    const createError = document.getElementById('create-event-error');
+
+    function syncCreateAmountFields() {
+      const target = selectCreateTarget ? selectCreateTarget.value : 'ALL';
+      const toggleContainer = document.getElementById('create-all-amount-toggle');
+
+      if (target === 'ALL') {
+        if (toggleContainer) toggleContainer.style.display = 'block';
+        if (fieldMemberAmount) fieldMemberAmount.style.display = 'block';
+        const isSame = chkSameAmount ? chkSameAmount.checked : true;
+        if (fieldLeaderAmount) fieldLeaderAmount.style.display = isSame ? 'none' : 'block';
+      } else if (target === 'MEMBERS') {
+        if (toggleContainer) toggleContainer.style.display = 'none';
+        if (fieldMemberAmount) fieldMemberAmount.style.display = 'block';
+        if (fieldLeaderAmount) fieldLeaderAmount.style.display = 'none';
+      } else if (target === 'LEADERS') {
+        if (toggleContainer) toggleContainer.style.display = 'none';
+        if (fieldMemberAmount) fieldMemberAmount.style.display = 'none';
+        if (fieldLeaderAmount) fieldLeaderAmount.style.display = 'block';
+      }
+    }
+
+    if (selectCreateTarget) selectCreateTarget.addEventListener('change', syncCreateAmountFields);
+    if (chkSameAmount) chkSameAmount.addEventListener('change', syncCreateAmountFields);
+
+    function openCreateEventModal() {
+      document.getElementById('create-event-title').value = '';
+      document.getElementById('create-event-desc').value = '';
+      document.getElementById('create-event-date').value = new Date().toISOString().split('T')[0];
+      if (selectCreateTarget) selectCreateTarget.value = 'ALL';
+      if (chkSameAmount) chkSameAmount.checked = true;
+      document.getElementById('create-member-amount').value = '';
+      document.getElementById('create-leader-amount').value = '';
+      if (createError) { createError.textContent = ''; createError.style.display = 'none'; }
+      syncCreateAmountFields();
+      if (createEventModal) createEventModal.classList.add('active');
+    }
+
+    function closeCreateEventModal() {
+      if (createEventModal) createEventModal.classList.remove('active');
+    }
+
+    if (btnOpenCreateEvent) btnOpenCreateEvent.addEventListener('click', openCreateEventModal);
+    if (btnCloseCreateEvent) btnCloseCreateEvent.addEventListener('click', closeCreateEventModal);
+    if (btnCancelCreateEvent) btnCancelCreateEvent.addEventListener('click', closeCreateEventModal);
+
+    if (btnSubmitCreateEvent) {
+      btnSubmitCreateEvent.addEventListener('click', async () => {
+        if (createError) { createError.textContent = ''; createError.style.display = 'none'; }
+
+        const title = String(document.getElementById('create-event-title').value || '').trim();
+        const desc = String(document.getElementById('create-event-desc').value || '').trim();
+        const date = document.getElementById('create-event-date').value;
+        const target = selectCreateTarget ? selectCreateTarget.value : 'ALL';
+        const memberAmt = Number(document.getElementById('create-member-amount').value) || 0;
+        let leaderAmt = Number(document.getElementById('create-leader-amount').value) || 0;
+
+        if (!title) {
+          if (createError) { createError.textContent = 'Please enter an event title.'; createError.style.display = 'block'; }
+          return;
+        }
+        if (!date) {
+          if (createError) { createError.textContent = 'Please choose an event date.'; createError.style.display = 'block'; }
+          return;
+        }
+
+        if (target === 'ALL') {
+          const isSame = chkSameAmount ? chkSameAmount.checked : true;
+          if (isSame) {
+            leaderAmt = memberAmt;
+          }
+          if (memberAmt <= 0) {
+            if (createError) { createError.textContent = 'Please enter a valid member contribution amount.'; createError.style.display = 'block'; }
+            return;
+          }
+          if (!isSame && leaderAmt <= 0) {
+            if (createError) { createError.textContent = 'Please enter a valid leader contribution amount.'; createError.style.display = 'block'; }
+            return;
+          }
+        } else if (target === 'MEMBERS') {
+          if (memberAmt <= 0) {
+            if (createError) { createError.textContent = 'Please enter a valid member contribution amount.'; createError.style.display = 'block'; }
+            return;
+          }
+          leaderAmt = 0;
+        } else if (target === 'LEADERS') {
+          if (leaderAmt <= 0) {
+            if (createError) { createError.textContent = 'Please enter a valid leader contribution amount.'; createError.style.display = 'block'; }
+            return;
+          }
+        }
+
+        btnSubmitCreateEvent.disabled = true;
+        btnSubmitCreateEvent.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Creating...';
+
+        try {
+          const result = await sendBackendRequest({
+            action: 'createEvent',
+            sessionToken: state.adminSessionToken,
+            title: title,
+            description: desc,
+            eventDate: date,
+            targetGroup: target,
+            memberAmount: memberAmt,
+            leaderAmount: leaderAmt
+          });
+
+          btnSubmitCreateEvent.disabled = false;
+          btnSubmitCreateEvent.innerHTML = 'Create Event';
+
+          if (result && result.success) {
+            closeCreateEventModal();
+            const alertEl = document.getElementById('admin-events-alert');
+            if (alertEl) {
+              alertEl.textContent = `Event "${title}" created successfully (${result.eventId || ''}).`;
+              alertEl.style.display = 'block';
+            }
+            loadAdminEvents();
+          } else {
+            if (createError) {
+              createError.textContent = result.message || 'Unable to create event.';
+              createError.style.display = 'block';
+            }
+          }
+        } catch (err) {
+          btnSubmitCreateEvent.disabled = false;
+          btnSubmitCreateEvent.innerHTML = 'Create Event';
+          if (createError) {
+            createError.textContent = err.message || 'Network error.';
+            createError.style.display = 'block';
+          }
+        }
+      });
+    }
+
+    // Edit Event Modal
+    const editEventModal = document.getElementById('duesEditEventModal');
+    const btnCloseEditEvent = document.getElementById('btnCloseEditEvent');
+    const btnCancelEditEvent = document.getElementById('btnCancelEditEvent');
+    const btnSubmitEditEvent = document.getElementById('btnSubmitEditEvent');
+    const editError = document.getElementById('edit-event-error');
+
+    function openEditEventModal(evt) {
+      document.getElementById('edit-event-id').value = evt.eventId;
+      document.getElementById('edit-event-title').value = evt.title || '';
+      document.getElementById('edit-event-desc').value = evt.description || '';
+      document.getElementById('edit-event-date').value = evt.eventDate || '';
+      document.getElementById('edit-event-status').value = evt.status || 'ACTIVE';
+      document.getElementById('edit-member-amount').value = evt.memberAmount || 0;
+      document.getElementById('edit-leader-amount').value = evt.leaderAmount || 0;
+
+      if (editError) { editError.textContent = ''; editError.style.display = 'none'; }
+      if (editEventModal) editEventModal.classList.add('active');
+    }
+
+    function closeEditEventModal() {
+      if (editEventModal) editEventModal.classList.remove('active');
+    }
+
+    if (btnCloseEditEvent) btnCloseEditEvent.addEventListener('click', closeEditEventModal);
+    if (btnCancelEditEvent) btnCancelEditEvent.addEventListener('click', closeEditEventModal);
+
+    if (btnSubmitEditEvent) {
+      btnSubmitEditEvent.addEventListener('click', async () => {
+        if (editError) { editError.textContent = ''; editError.style.display = 'none'; }
+
+        const eventId = document.getElementById('edit-event-id').value;
+        const title = String(document.getElementById('edit-event-title').value || '').trim();
+        const desc = String(document.getElementById('edit-event-desc').value || '').trim();
+        const date = document.getElementById('edit-event-date').value;
+        const status = document.getElementById('edit-event-status').value;
+        const memberAmt = Number(document.getElementById('edit-member-amount').value) || 0;
+        const leaderAmt = Number(document.getElementById('edit-leader-amount').value) || 0;
+
+        if (!title) {
+          if (editError) { editError.textContent = 'Please enter an event title.'; editError.style.display = 'block'; }
+          return;
+        }
+        if (!date) {
+          if (editError) { editError.textContent = 'Please choose an event date.'; editError.style.display = 'block'; }
+          return;
+        }
+
+        btnSubmitEditEvent.disabled = true;
+        btnSubmitEditEvent.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Saving...';
+
+        try {
+          const result = await sendBackendRequest({
+            action: 'updateEvent',
+            sessionToken: state.adminSessionToken,
+            eventId: eventId,
+            title: title,
+            description: desc,
+            eventDate: date,
+            status: status,
+            memberAmount: memberAmt,
+            leaderAmount: leaderAmt
+          });
+
+          btnSubmitEditEvent.disabled = false;
+          btnSubmitEditEvent.innerHTML = 'Save Changes';
+
+          if (result && result.success) {
+            closeEditEventModal();
+            const alertEl = document.getElementById('admin-events-alert');
+            if (alertEl) {
+              alertEl.textContent = `Event ${eventId} updated successfully.`;
+              alertEl.style.display = 'block';
+            }
+            loadAdminEvents();
+          } else {
+            if (editError) {
+              editError.textContent = result.message || 'Unable to update event.';
+              editError.style.display = 'block';
+            }
+          }
+        } catch (err) {
+          btnSubmitEditEvent.disabled = false;
+          btnSubmitEditEvent.innerHTML = 'Save Changes';
+          if (editError) {
+            editError.textContent = err.message || 'Network error.';
+            editError.style.display = 'block';
+          }
+        }
+      });
+    }
+
+    // Event Audit Modal
+    const eventAuditModal = document.getElementById('duesEventAuditModal');
+    const btnCloseEventAudit = document.getElementById('btnCloseEventAudit');
+    const btnCloseEventAudit2 = document.getElementById('btnCloseEventAudit2');
+
+    function openEventAuditModal(eventId) {
+      const tbody = document.getElementById('event-audit-tbody');
+      if (tbody) {
+        tbody.replaceChildren();
+        const audits = state.eventAudits ? state.eventAudits.filter(a => !eventId || a.eventId === eventId) : [];
+        if (audits.length) {
+          audits.forEach(a => {
+            const tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #f1f5f9';
+
+            const tdTime = document.createElement('td');
+            tdTime.style.padding = '8px 10px';
+            tdTime.textContent = a.timestamp || '';
+
+            const tdAdmin = document.createElement('td');
+            tdAdmin.style.padding = '8px 10px';
+            tdAdmin.textContent = a.administrator || '';
+
+            const tdAction = document.createElement('td');
+            tdAction.style.padding = '8px 10px';
+            tdAction.style.fontWeight = '600';
+            tdAction.textContent = a.action || '';
+
+            const tdChanges = document.createElement('td');
+            tdChanges.style.padding = '8px 10px';
+            tdChanges.textContent = `Member: ₹${a.previousMemberAmount || 0} → ₹${a.newMemberAmount || 0} | Leader: ₹${a.previousLeaderAmount || 0} → ₹${a.newLeaderAmount || 0}`;
+
+            const tdDetails = document.createElement('td');
+            tdDetails.style.padding = '8px 10px';
+            tdDetails.textContent = a.details || '';
+
+            tr.append(tdTime, tdAdmin, tdAction, tdChanges, tdDetails);
+            tbody.appendChild(tr);
+          });
+        } else {
+          const emptyRow = document.createElement('tr');
+          const emptyCell = document.createElement('td');
+          emptyCell.colSpan = 5;
+          emptyCell.style.textAlign = 'center';
+          emptyCell.style.padding = '16px';
+          emptyCell.style.color = 'var(--text-muted)';
+          emptyCell.textContent = 'No audit records found for this event.';
+          emptyRow.appendChild(emptyCell);
+          tbody.appendChild(emptyRow);
+        }
+      }
+
+      if (eventAuditModal) eventAuditModal.classList.add('active');
+    }
+
+    function closeEventAuditModal() {
+      if (eventAuditModal) eventAuditModal.classList.remove('active');
+    }
+
+    if (btnCloseEventAudit) btnCloseEventAudit.addEventListener('click', closeEventAuditModal);
+    if (btnCloseEventAudit2) btnCloseEventAudit2.addEventListener('click', closeEventAuditModal);
+
     function renderPendingPaymentsList() {
       const container = document.getElementById('admin-pending-payments-list');
       if (!container) return;
@@ -854,8 +1740,8 @@
         container.innerHTML = `
           <div style="text-align: center; padding: 36px 20px; background: #f8fafc; border: 1px dashed var(--border-color); border-radius: var(--radius-md); color: var(--text-muted);">
             <i class="fa-solid fa-clipboard-check fa-2x" style="color: #16a34a; margin-bottom: 8px;"></i>
-            <p style="margin: 0; font-weight: 600;">No pending dues payments found.</p>
-            <span style="font-size: 0.85rem;">All submitted dues payments have been processed.</span>
+            <p style="margin: 0; font-weight: 600;">No pending payments or contributions found.</p>
+            <span style="font-size: 0.85rem;">There are no monthly dues or event contribution payments awaiting review.</span>
           </div>
         `;
         return;
@@ -893,6 +1779,9 @@
 
         const metaGrid = makeElement('div', 'dues-admin-meta-grid');
         addMeta(metaGrid, 'Payer:', `${p.payer || ''} (${p.payerEmail || ''})`);
+        addMeta(metaGrid, 'Allocation Type:', p.paymentType === 'CONTRIBUTION'
+          ? `Event Contribution${p.eventTitle ? ` — ${p.eventTitle}` : ''}`
+          : 'Monthly Dues');
         addMeta(metaGrid, 'Payment Method:', p.paymentMethod || '');
         addMeta(metaGrid, 'Payment Date:', p.paymentDate || '');
         const total = makeElement('div', 'dues-admin-meta-item');
@@ -1201,6 +2090,54 @@
           document.getElementById('rep-cash-total').textContent = `₹${(Number(rep.totalCashCollected) || 0).toFixed(2)}`;
           document.getElementById('rep-pending-amount').textContent = `₹${(Number(rep.totalPendingAmount) || 0).toFixed(2)}`;
           document.getElementById('rep-pending-count').textContent = String(rep.pendingCount || 0);
+
+          // Populate Event Contributions Breakdown table
+          const repEventsTbody = document.getElementById('rep-events-tbody');
+          if (repEventsTbody) {
+            repEventsTbody.replaceChildren();
+            if (Array.isArray(rep.eventBreakdown) && rep.eventBreakdown.length) {
+              rep.eventBreakdown.forEach(evt => {
+                const tr = document.createElement('tr');
+                tr.style.borderBottom = '1px solid #f1f5f9';
+
+                const tdId = document.createElement('td');
+                tdId.style.padding = '8px 10px';
+                tdId.style.fontWeight = '600';
+                tdId.textContent = evt.eventId || '';
+
+                const tdTitle = document.createElement('td');
+                tdTitle.style.padding = '8px 10px';
+                tdTitle.textContent = evt.title || '';
+
+                const tdStatus = document.createElement('td');
+                tdStatus.style.padding = '8px 10px';
+                tdStatus.innerHTML = `<span class="dues-badge dues-badge-${(evt.status || 'active').toLowerCase()}">${evt.status || 'ACTIVE'}</span>`;
+
+                const tdContributors = document.createElement('td');
+                tdContributors.style.padding = '8px 10px';
+                tdContributors.textContent = String(evt.contributorsCount || 0);
+
+                const tdCollected = document.createElement('td');
+                tdCollected.style.padding = '8px 10px';
+                tdCollected.style.fontWeight = '600';
+                tdCollected.style.color = '#15803d';
+                tdCollected.textContent = `₹${(Number(evt.totalCollected) || 0).toFixed(2)}`;
+
+                tr.append(tdId, tdTitle, tdStatus, tdContributors, tdCollected);
+                repEventsTbody.appendChild(tr);
+              });
+            } else {
+              const emptyRow = document.createElement('tr');
+              const emptyCell = document.createElement('td');
+              emptyCell.colSpan = 5;
+              emptyCell.style.textAlign = 'center';
+              emptyCell.style.padding = '12px';
+              emptyCell.style.color = 'var(--text-muted)';
+              emptyCell.textContent = 'No event contribution records.';
+              emptyRow.appendChild(emptyCell);
+              repEventsTbody.appendChild(emptyRow);
+            }
+          }
 
           const tbody = document.getElementById('rep-transactions-tbody');
           if (tbody) {

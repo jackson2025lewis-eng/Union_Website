@@ -41,6 +41,8 @@ const ADMIN_PERMISSIONS_ = {
 const LSU_PAYMENT_CONFIG = {
   PAYMENT_SHEET_NAME: "Payments",
   ALLOCATION_SHEET_NAME: "PaymentAllocations",
+  EVENTS_SHEET_NAME: "Events",
+  EVENT_AUDITS_SHEET_NAME: "EventAudits",
   MEMBER_OTP_PREFIX: "LSU_DUE_OTP_",
   MEMBER_SESSION_PREFIX: "LSU_DUE_MEMBER_SESSION_",
   PAYMENT_ADMIN_OTP_PREFIX: "LSU_PAYMENT_ADMIN_OTP_",
@@ -441,16 +443,81 @@ function getAdministratorAuditLog(sessionToken) {
 function lsuPaymentSheet_(name, headers) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sheet = ss.getSheetByName(name);
-  if (!sheet) sheet = ss.insertSheet(name);
-  if (sheet.getLastRow() === 0) {
+  const isNew = !sheet;
+  if (isNew) sheet = ss.insertSheet(name);
+  if (isNew || sheet.getLastRow() === 0) {
     sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
   } else {
-    const current = sheet.getRange(1, 1, 1, headers.length).getDisplayValues()[0];
-    if (current.some((v, i) => String(v || "").trim() !== headers[i])) {
-      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    const width = sheet.getLastColumn();
+    if (!width) throw publicError_(`${name} has records but no recognizable header row. No data was changed.`);
+    const current = sheet.getRange(1, 1, 1, width).getDisplayValues()[0];
+
+    if (name === LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME) {
+      const baseHeaders = headers.slice(0, 6);
+      if (baseHeaders.some((h, i) => String(current[i] || "").trim().toLowerCase() !== h.toLowerCase())) {
+        throw publicError_("PaymentAllocations has an unexpected legacy schema. No existing headers or records were changed.");
+      }
+      headers.slice(6).forEach(header => {
+        const matches = current.filter(value => String(value || "").trim().toLowerCase() === header.toLowerCase()).length;
+        if (matches > 1) {
+          throw publicError_(`PaymentAllocations contains duplicate "${header}" headers. No existing headers or records were changed.`);
+        }
+        if (!matches) {
+          current.push(header);
+          sheet.getRange(1, current.length, 1, 1).setValue(header);
+        }
+      });
+    } else {
+      const mismatch = headers.findIndex((header, i) =>
+        String(current[i] || "").trim().toLowerCase() !== header.toLowerCase()
+      );
+      if (mismatch !== -1) {
+        throw publicError_(`${name} has an unexpected schema at column ${mismatch + 1}. No existing headers or records were changed.`);
+      }
     }
   }
   return sheet;
+}
+
+function lsuAllocationColumns_(sheet) {
+  const width = sheet.getLastColumn();
+  const headers = sheet.getRange(1, 1, 1, width).getDisplayValues()[0]
+    .map(value => String(value || "").trim().toLowerCase());
+  const columns = {};
+  [
+    ["paymentId", "Payment ID"],
+    ["memberEmail", "Member Email"],
+    ["memberName", "Member Name"],
+    ["membershipId", "Membership ID"],
+    ["amount", "Amount"],
+    ["receiptStatus", "Receipt Status"],
+    ["allocationType", "Allocation Type"],
+    ["eventId", "Event ID"]
+  ].forEach(([key, header]) => {
+    const matches = [];
+    headers.forEach((value, index) => {
+      if (value === header.toLowerCase()) matches.push(index + 1);
+    });
+    if (matches.length !== 1) {
+      throw publicError_(`PaymentAllocations must contain exactly one "${header}" column.`);
+    }
+    columns[key] = matches[0];
+  });
+  return columns;
+}
+
+function lsuAllocationValue_(row, columns, key, fallback) {
+  const value = row[columns[key] - 1];
+  return value === undefined || value === null || value === "" ? fallback : value;
+}
+
+function lsuAppendAllocation_(sheet, values) {
+  const columns = lsuAllocationColumns_(sheet);
+  const row = new Array(sheet.getLastColumn()).fill("");
+  Object.keys(values).forEach(key => {
+    row[columns[key] - 1] = values[key];
+  });
+  sheet.appendRow(row);
 }
 
 function ensurePaymentSheets() {
@@ -460,7 +527,14 @@ function ensurePaymentSheets() {
     "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
   ]);
   lsuPaymentSheet_(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME, [
-    "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status"
+    "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status",
+    "Allocation Type","Event ID"
+  ]);
+  lsuPaymentSheet_(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME, [
+    "Event ID","Title","Description","Event Date","Target Group","Member Amount","Leader Amount","Status","Created Date","Created By"
+  ]);
+  lsuPaymentSheet_(LSU_PAYMENT_CONFIG.EVENT_AUDITS_SHEET_NAME, [
+    "Timestamp","Event ID","Administrator","Action","Previous Member Amount","New Member Amount","Previous Leader Amount","New Leader Amount","Details"
   ]);
 }
 
@@ -1911,6 +1985,7 @@ function lsuFindMemberByEmail_(email) {
   const firstCol = findColumnIndex(headers, "First Name", "FirstName", "Applicant Name");
   const middleCol = findColumnIndex(headers, "Middle Name", "MiddleName");
   const lastCol = findColumnIndex(headers, "Last Name", "LastName");
+  const positionCol = findColumnIndex(headers, "Position / Role", "Position", "Role", "Position/Role");
 
   let fallbackCandidate = null;
   for (let i = values.length - 1; i >= 1; i--) {
@@ -1926,13 +2001,21 @@ function lsuFindMemberByEmail_(email) {
         lastCol !== -1 ? row[lastCol] : ""
       ].map(v => String(v || "").trim()).filter(Boolean).join(" ");
 
+      const rawPosition = positionCol !== -1 ? String(row[positionCol] || "").trim() : "";
+      const isLeader = rawPosition !== "Member";
+      const category = isLeader ? "LEADER" : "MEMBER";
+      const position = rawPosition || "Unspecified";
+
       const candidate = {
         row: i + 1,
         email,
         name: name || email,
         membershipId,
         status,
-        fullMember
+        fullMember,
+        position,
+        category,
+        isLeader
       };
       if (fullMember) return candidate;
       if (!fallbackCandidate) fallbackCandidate = candidate;
@@ -2070,12 +2153,26 @@ function getDuePaymentData(sessionToken, targetEmail) {
     }
     return {
       success: true,
-      member: { email: member.email, name: member.name, membershipId: member.membershipId }
+      member: {
+        email: member.email,
+        name: member.name,
+        membershipId: member.membershipId,
+        position: member.position,
+        category: member.category,
+        isLeader: member.isLeader
+      }
     };
   }
   return {
     success: true,
-    payer: { email: session.email, name: session.member.name, membershipId: session.member.membershipId }
+    payer: {
+      email: session.email,
+      name: session.member.name,
+      membershipId: session.member.membershipId,
+      position: session.member.position,
+      category: session.member.category,
+      isLeader: session.member.isLeader
+    }
   };
 }
 
@@ -2191,9 +2288,16 @@ function submitDuePayment(payload) {
       "PENDING VERIFICATION", submitted, "", "", "", ""
     ]);
 
-    allocations.forEach(a => allocationSheet.appendRow([
-      paymentId, a.email, a.name, a.membershipId, a.amount, "PENDING VERIFICATION"
-    ]));
+    allocations.forEach(a => lsuAppendAllocation_(allocationSheet, {
+      paymentId,
+      memberEmail: a.email,
+      memberName: a.name,
+      membershipId: a.membershipId,
+      amount: a.amount,
+      receiptStatus: "PENDING VERIFICATION",
+      allocationType: "DUES",
+      eventId: ""
+    }));
 
     return {
       success: true,
@@ -2213,6 +2317,516 @@ function logoutDueMember(sessionToken) {
   CacheService.getScriptCache().remove(lsuDueSessionKey_(sessionToken));
   return { success: true };
 }
+
+/*******************************************************
+ * EVENT CONTRIBUTIONS LOGIC
+ *******************************************************/
+
+function lsuValidateEventAmount_(value, label) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0 || n > 10000000) {
+    throw publicError_(`${label || "Contribution amount"} must be greater than zero.`);
+  }
+  return Math.round(n * 100) / 100;
+}
+
+function getEvents(payload) {
+  let isAdmin = false;
+  let memberEmail = "";
+  let memberCategory = "MEMBER";
+  let memberName = "";
+  let memberPosition = "Member";
+
+  if (payload && payload.sessionToken) {
+    lsuRequirePaymentAdmin_(payload.sessionToken);
+    isAdmin = true;
+  } else if (payload && payload.memberSessionToken) {
+    const memberSession = lsuRequireDueSession_(payload.memberSessionToken);
+    memberEmail = extractEmail(memberSession.email);
+    memberName = memberSession.member.name;
+    const memInfo = lsuFindMemberByEmail_(memberEmail);
+    if (memInfo) {
+      memberCategory = memInfo.category;
+      memberPosition = memInfo.position;
+    }
+  } else {
+    throw publicError_("A valid member or financial administrator session is required.");
+  }
+
+  ensurePaymentSheets();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const eventSheet = ss.getSheetByName(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME);
+  const allocSheet = ss.getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
+  const auditSheet = ss.getSheetByName(LSU_PAYMENT_CONFIG.EVENT_AUDITS_SHEET_NAME);
+  const eventData = eventSheet ? eventSheet.getDataRange().getValues() : [];
+  const allocData = allocSheet ? allocSheet.getDataRange().getValues() : [];
+  const allocationColumns = lsuAllocationColumns_(allocSheet);
+
+  const events = [];
+
+  for (let i = 1; i < eventData.length; i++) {
+    const row = eventData[i];
+    const eventId = String(row[0] || "").trim();
+    if (!eventId) continue;
+
+    const title = String(row[1] || "");
+    const description = String(row[2] || "");
+    const eventDate = String(row[3] || "");
+    const targetGroup = String(row[4] || "ALL").toUpperCase();
+    const memberAmount = Number(row[5] || 0);
+    const leaderAmount = Number(row[6] || 0);
+    const status = String(row[7] || "ACTIVE").toUpperCase();
+    const createdDate = row[8] instanceof Date ? formatExactDateTime(row[8]) : String(row[8] || "");
+    const createdBy = String(row[9] || "");
+
+    // Do not show archived events to regular members
+    if (!isAdmin && status === "ARCHIVED") continue;
+
+    let totalCollected = 0;
+    let verifiedContributors = 0;
+    let pendingAmount = 0;
+    let pendingContributors = 0;
+    let myPaymentStatus = "UNPAID";
+    let myAllocatedAmount = 0;
+    let myPaymentId = "";
+
+    for (let a = 1; a < allocData.length; a++) {
+      const aRow = allocData[a];
+      const aType = String(lsuAllocationValue_(aRow, allocationColumns, "allocationType", "DUES")).trim().toUpperCase();
+      const aEventId = String(lsuAllocationValue_(aRow, allocationColumns, "eventId", "")).trim();
+      const aStatus = String(lsuAllocationValue_(aRow, allocationColumns, "receiptStatus", "")).trim().toUpperCase();
+      const aEmail = extractEmail(lsuAllocationValue_(aRow, allocationColumns, "memberEmail", ""));
+      const aAmount = Number(lsuAllocationValue_(aRow, allocationColumns, "amount", 0) || 0);
+      const aPayId = String(lsuAllocationValue_(aRow, allocationColumns, "paymentId", "")).trim();
+
+      if (aType === "CONTRIBUTION" && aEventId === eventId) {
+        if (aStatus === "PAID / VERIFIED") {
+          totalCollected += aAmount;
+          verifiedContributors++;
+        } else if (aStatus === "PENDING VERIFICATION") {
+          pendingAmount += aAmount;
+          pendingContributors++;
+        }
+
+        if (memberEmail && aEmail === memberEmail) {
+          if (aStatus === "PAID / VERIFIED") {
+            myPaymentStatus = "PAID / VERIFIED";
+            myAllocatedAmount = aAmount;
+            myPaymentId = aPayId;
+          } else if (aStatus === "PENDING VERIFICATION" && myPaymentStatus !== "PAID / VERIFIED") {
+            myPaymentStatus = "PENDING VERIFICATION";
+            myAllocatedAmount = aAmount;
+            myPaymentId = aPayId;
+          }
+        }
+      }
+    }
+
+    let requiredAmount = memberAmount;
+    let isEligible = true;
+    if (targetGroup === "MEMBERS") {
+      requiredAmount = memberAmount;
+      if (memberCategory !== "MEMBER") isEligible = false;
+    } else if (targetGroup === "LEADERS") {
+      requiredAmount = leaderAmount;
+      if (memberCategory !== "LEADER") isEligible = false;
+    } else {
+      requiredAmount = memberCategory === "LEADER" ? leaderAmount : memberAmount;
+      isEligible = true;
+    }
+
+    events.push({
+      eventId,
+      title,
+      description,
+      eventDate,
+      targetGroup,
+      memberAmount,
+      leaderAmount,
+      status,
+      createdDate,
+      createdBy,
+      totalCollected: Math.round(totalCollected * 100) / 100,
+      verifiedContributors,
+      pendingAmount: Math.round(pendingAmount * 100) / 100,
+      pendingContributors,
+      requiredAmount,
+      isEligible,
+      memberCategory,
+      memberPosition,
+      myPaymentStatus,
+      myAllocatedAmount,
+      myPaymentId
+    });
+  }
+
+  let audits = [];
+  if (isAdmin && auditSheet) {
+    const auditData = auditSheet.getDataRange().getValues();
+    for (let i = 1; i < auditData.length; i++) {
+      const a = auditData[i];
+      audits.push({
+        timestamp: a[0] instanceof Date ? formatExactDateTime(a[0]) : String(a[0] || ""),
+        eventId: String(a[1] || ""),
+        administrator: String(a[2] || ""),
+        action: String(a[3] || ""),
+        previousMemberAmount: a[4] !== "" ? Number(a[4]) : null,
+        newMemberAmount: a[5] !== "" ? Number(a[5]) : null,
+        previousLeaderAmount: a[6] !== "" ? Number(a[6]) : null,
+        newLeaderAmount: a[7] !== "" ? Number(a[7]) : null,
+        details: String(a[8] || "")
+      });
+    }
+  }
+
+  return {
+    success: true,
+    events,
+    audits: isAdmin ? audits.reverse() : undefined,
+    member: memberEmail ? { email: memberEmail, name: memberName, position: memberPosition, category: memberCategory } : undefined
+  };
+}
+
+function createEvent(payload) {
+  const session = lsuRequirePaymentAdmin_(payload.sessionToken);
+
+  const title = String(payload.title || "").trim();
+  if (!title) throw publicError_("Event title is required.");
+
+  const description = String(payload.description || "").trim();
+  const eventDate = String(payload.eventDate || "").trim();
+  if (!eventDate) throw publicError_("Event date is required.");
+
+  const targetGroup = String(payload.targetGroup || "").trim().toUpperCase();
+  if (!["MEMBERS", "LEADERS", "ALL"].includes(targetGroup)) {
+    throw publicError_("Target group must be Members, Leaders, or All.");
+  }
+
+  let memberAmount = 0;
+  let leaderAmount = 0;
+
+  if (targetGroup === "MEMBERS") {
+    memberAmount = lsuValidateEventAmount_(payload.memberAmount, "Member contribution amount");
+    leaderAmount = 0;
+  } else if (targetGroup === "LEADERS") {
+    leaderAmount = lsuValidateEventAmount_(payload.leaderAmount, "Leader contribution amount");
+    memberAmount = 0;
+  } else if (targetGroup === "ALL") {
+    memberAmount = lsuValidateEventAmount_(payload.memberAmount, "Member contribution amount");
+    leaderAmount = payload.leaderAmount !== undefined && payload.leaderAmount !== null && String(payload.leaderAmount).trim() !== ""
+      ? lsuValidateEventAmount_(payload.leaderAmount, "Leader contribution amount")
+      : memberAmount;
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    throw publicError_("Payment system is busy. Please retry in a moment.");
+  }
+
+  try {
+    ensurePaymentSheets();
+    const eventSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME, [
+      "Event ID","Title","Description","Event Date","Target Group","Member Amount","Leader Amount","Status","Created Date","Created By"
+    ]);
+    const auditSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.EVENT_AUDITS_SHEET_NAME, [
+      "Timestamp","Event ID","Administrator","Action","Previous Member Amount","New Member Amount","Previous Leader Amount","New Leader Amount","Details"
+    ]);
+
+    const year = new Date().getFullYear();
+    const eventId = "EVT-" + year + "-" + Utilities.formatString("%03d", Math.max(1, eventSheet.getLastRow()));
+    const now = new Date();
+
+    eventSheet.appendRow([
+      eventId, title, description, eventDate, targetGroup,
+      memberAmount, leaderAmount, "ACTIVE", now, session.email
+    ]);
+
+    auditSheet.appendRow([
+      now, eventId, session.email, "EVENT_CREATED",
+      "", memberAmount, "", leaderAmount,
+      `Event created: "${title}" (${targetGroup}). Member fee: ₹${memberAmount}, Leader fee: ₹${leaderAmount}`
+    ]);
+
+    return {
+      success: true,
+      message: "Event contribution created successfully.",
+      eventId: eventId
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function updateEvent(payload) {
+  const session = lsuRequirePaymentAdmin_(payload.sessionToken);
+  const eventId = String(payload.eventId || "").trim();
+  if (!eventId) throw publicError_("Event ID is required.");
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    throw publicError_("Payment system is busy. Please retry in a moment.");
+  }
+
+  try {
+    ensurePaymentSheets();
+    const eventSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME, [
+      "Event ID","Title","Description","Event Date","Target Group","Member Amount","Leader Amount","Status","Created Date","Created By"
+    ]);
+    const auditSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.EVENT_AUDITS_SHEET_NAME, [
+      "Timestamp","Event ID","Administrator","Action","Previous Member Amount","New Member Amount","Previous Leader Amount","New Leader Amount","Details"
+    ]);
+
+    const data = eventSheet.getDataRange().getValues();
+    let rowIndex = -1;
+    let existingRow = null;
+    for (let i = 1; i < data.length; i++) {
+      if (String(data[i][0] || "").trim() === eventId) {
+        rowIndex = i + 1;
+        existingRow = data[i];
+        break;
+      }
+    }
+    if (rowIndex === -1) throw publicError_("Event not found.");
+
+    const oldTitle = String(existingRow[1] || "");
+    const oldDesc = String(existingRow[2] || "");
+    const oldDate = String(existingRow[3] || "");
+    const oldTarget = String(existingRow[4] || "");
+    const oldMemberAmount = Number(existingRow[5] || 0);
+    const oldLeaderAmount = Number(existingRow[6] || 0);
+    const oldStatus = String(existingRow[7] || "");
+
+    const newTitle = payload.title !== undefined ? String(payload.title || "").trim() : oldTitle;
+    if (!newTitle) throw publicError_("Event title is required.");
+    const newDesc = payload.description !== undefined ? String(payload.description || "").trim() : oldDesc;
+    const newDate = payload.eventDate !== undefined ? String(payload.eventDate || "").trim() : oldDate;
+    if (!newDate) throw publicError_("Event date is required.");
+
+    let newStatus = oldStatus;
+    if (payload.status !== undefined) {
+      const s = String(payload.status || "").trim().toUpperCase();
+      if (!["ACTIVE", "CLOSED", "ARCHIVED"].includes(s)) throw publicError_("Invalid event status.");
+      newStatus = s;
+    }
+
+    let newMemberAmount = oldMemberAmount;
+    let newLeaderAmount = oldLeaderAmount;
+    let amountChanged = false;
+
+    if (payload.memberAmount !== undefined && (oldTarget === "MEMBERS" || oldTarget === "ALL")) {
+      const parsed = lsuValidateEventAmount_(payload.memberAmount, "Member contribution amount");
+      if (parsed !== oldMemberAmount) {
+        newMemberAmount = parsed;
+        amountChanged = true;
+      }
+    }
+
+    if (payload.leaderAmount !== undefined && (oldTarget === "LEADERS" || oldTarget === "ALL")) {
+      const parsed = lsuValidateEventAmount_(payload.leaderAmount, "Leader contribution amount");
+      if (parsed !== oldLeaderAmount) {
+        newLeaderAmount = parsed;
+        amountChanged = true;
+      }
+    }
+
+    const now = new Date();
+
+    eventSheet.getRange(rowIndex, 2, 1, 7).setValues([[
+      newTitle, newDesc, newDate, oldTarget, newMemberAmount, newLeaderAmount, newStatus
+    ]]);
+
+    if (amountChanged) {
+      auditSheet.appendRow([
+        now, eventId, session.email, "AMOUNT_CHANGED",
+        oldMemberAmount, newMemberAmount, oldLeaderAmount, newLeaderAmount,
+        `Contribution fee updated by ${session.email}. Previous member fee: ₹${oldMemberAmount}, new: ₹${newMemberAmount}; Previous leader fee: ₹${oldLeaderAmount}, new: ₹${newLeaderAmount}. Previous payment records preserved.`
+      ]);
+    } else {
+      auditSheet.appendRow([
+        now, eventId, session.email, "EVENT_UPDATED",
+        oldMemberAmount, newMemberAmount, oldLeaderAmount, newLeaderAmount,
+        `Event details updated by ${session.email} (Status: ${newStatus}, Title: "${newTitle}").`
+      ]);
+    }
+
+    return {
+      success: true,
+      message: "Event updated successfully."
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function submitContributionPayment(payload) {
+  payload = payload || {};
+  const session = lsuRequireDueSession_(payload.sessionToken);
+  const eventId = String(payload.eventId || "").trim();
+  if (!eventId) throw publicError_("Event ID is required.");
+
+  const method = lsuPaymentMethod_(payload.paymentMethod);
+  const payer = session.member;
+  if (payload.payForSelf === false) {
+    throw publicError_("Event contribution payments must include the signed-in member.");
+  }
+  if (payload.confirmed !== true) throw publicError_("Please confirm the payment before submitting.");
+
+  const paymentDate = String(payload.paymentDate || "").trim();
+  if (!paymentDate) throw publicError_("Payment date is required.");
+
+  const upiRef = method === "ONLINE / UPI" ? String(payload.upiRefNo || "").trim() : "";
+  if (method === "ONLINE / UPI" && !upiRef) throw publicError_("UPI Ref No. is required.");
+
+  const cashReceiverName = method === "CASH" ? String(payload.cashReceiverName || "").trim() : "";
+  const cashReceiverPosition = method === "CASH" ? String(payload.cashReceiverPosition || "").trim() : "";
+  if (method === "CASH" && !cashReceiverName) throw publicError_("Cash receiver name is required.");
+  if (method === "CASH" && !cashReceiverPosition) throw publicError_("Cash receiver position is required.");
+
+  const otherEmails = Array.isArray(payload.otherEmails) ? payload.otherEmails : [];
+  if (otherEmails.length > 2) throw publicError_("You can add up to two other registered members.");
+  const emails = [extractEmail(payer.email)];
+  otherEmails.forEach(value => {
+    const email = extractEmail(value);
+    if (!email) throw publicError_("Each additional member must have a valid registered email address.");
+    if (emails.includes(email)) throw publicError_("A member can only be included once in a contribution payment.");
+    emails.push(email);
+  });
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    throw publicError_("Payment system is busy. Please retry in a moment.");
+  }
+
+  try {
+    ensurePaymentSheets();
+    const paymentSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, [
+      "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
+      "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
+      "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
+    ]);
+    const allocationSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME, [
+      "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status",
+      "Allocation Type","Event ID"
+    ]);
+    const allocationColumns = lsuAllocationColumns_(allocationSheet);
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const eventSheet = ss.getSheetByName(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME);
+    const eventData = eventSheet.getDataRange().getValues();
+    let event = null;
+    for (let i = 1; i < eventData.length; i++) {
+      if (String(eventData[i][0] || "").trim() === eventId) {
+        event = {
+          eventId,
+          title: String(eventData[i][1] || ""),
+          targetGroup: String(eventData[i][4] || "").trim().toUpperCase(),
+          memberAmount: Number(eventData[i][5] || 0),
+          leaderAmount: Number(eventData[i][6] || 0),
+          status: String(eventData[i][7] || "").trim().toUpperCase()
+        };
+        break;
+      }
+    }
+    if (!event) throw publicError_("Event not found.");
+    if (event.status !== "ACTIVE") throw publicError_("This event is not currently accepting contributions.");
+    if (!["MEMBERS", "LEADERS", "ALL"].includes(event.targetGroup)) {
+      throw publicError_("The event contribution settings require administrator review.");
+    }
+
+    const allocData = allocationSheet.getDataRange().getValues();
+    const resolvedMembers = [];
+    let calculatedTotal = 0;
+
+    emails.forEach(email => {
+      const member = lsuFindMemberByEmail_(email);
+      if (!member) throw publicError_(`Member with email ${email} is not registered in LSU database.`);
+      if (!member.fullMember) throw publicError_(`Member with email ${email} is not a confirmed member.`);
+
+      let requiredFee;
+      if (event.targetGroup === "MEMBERS") {
+        if (member.category !== "MEMBER") {
+          throw publicError_(`${member.name} (${email}) is registered as a ${member.position} and cannot be assigned a Member-only contribution.`);
+        }
+        requiredFee = event.memberAmount;
+      } else if (event.targetGroup === "LEADERS") {
+        if (member.category !== "LEADER") {
+          throw publicError_(`${member.name} (${email}) is registered as a ${member.position} and cannot be assigned a Leader-only contribution.`);
+        }
+        requiredFee = event.leaderAmount;
+      } else {
+        requiredFee = member.category === "LEADER" ? event.leaderAmount : event.memberAmount;
+      }
+      requiredFee = lsuValidateEventAmount_(requiredFee, "Required contribution amount");
+
+      for (let a = 1; a < allocData.length; a++) {
+        const row = allocData[a];
+        const aType = String(lsuAllocationValue_(row, allocationColumns, "allocationType", "DUES")).trim().toUpperCase();
+        const aEventId = String(lsuAllocationValue_(row, allocationColumns, "eventId", "")).trim();
+        const aEmail = extractEmail(lsuAllocationValue_(row, allocationColumns, "memberEmail", ""));
+        const aStatus = String(lsuAllocationValue_(row, allocationColumns, "receiptStatus", "")).trim().toUpperCase();
+
+        if (aType === "CONTRIBUTION" && aEventId === eventId && aEmail === email) {
+          if (aStatus === "PAID / VERIFIED") {
+            throw publicError_(`${member.name} (${email}) has already contributed to "${event.title}".`);
+          }
+          if (aStatus === "PENDING VERIFICATION") {
+            throw publicError_(`A contribution for ${member.name} (${email}) to "${event.title}" is already pending verification.`);
+          }
+        }
+      }
+
+      calculatedTotal += requiredFee;
+      resolvedMembers.push({
+        email: member.email,
+        name: member.name,
+        membershipId: member.membershipId,
+        amount: requiredFee
+      });
+    });
+
+    calculatedTotal = Math.round(calculatedTotal * 100) / 100;
+    const paymentId = lsuPaymentId_();
+    const submitted = new Date();
+
+    paymentSheet.appendRow([
+      paymentId, payer.name, payer.email, method, calculatedTotal,
+      paymentDate, upiRef, cashReceiverName, cashReceiverPosition,
+      "PENDING VERIFICATION", submitted, "", "", "", ""
+    ]);
+
+    resolvedMembers.forEach(m => {
+      lsuAppendAllocation_(allocationSheet, {
+        paymentId,
+        memberEmail: m.email,
+        memberName: m.name,
+        membershipId: m.membershipId,
+        amount: m.amount,
+        receiptStatus: "PENDING VERIFICATION",
+        allocationType: "CONTRIBUTION",
+        eventId
+      });
+    });
+
+    return {
+      success: true,
+      paymentId,
+      paymentMethod: method,
+      totalAmount: calculatedTotal,
+      status: "PENDING VERIFICATION",
+      eventId,
+      eventTitle: event.title,
+      message: `Contribution payment of ₹${calculatedTotal.toFixed(2)} submitted successfully. It will be verified by a financial administrator.`
+    };
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
 
 /*******************************************************
  * FINANCE PAYMENT ADMIN AUTH & ACTIONS
@@ -2305,20 +2919,31 @@ function getPendingDuePayments(sessionToken) {
 
   const ps = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME);
   const as = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
+  const eventSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME);
   const pv = ps.getDataRange().getValues();
   const av = as.getDataRange().getValues();
+  const allocationColumns = lsuAllocationColumns_(as);
+  const eventTitles = {};
+  const eventValues = eventSheet.getDataRange().getValues();
+  for (let i = 1; i < eventValues.length; i++) {
+    const eventId = String(eventValues[i][0] || "").trim();
+    if (eventId) eventTitles[eventId] = String(eventValues[i][1] || "");
+  }
   const payments = [];
   const allocations = {};
 
   for (let i = 1; i < av.length; i++) {
-    const p = String(av[i][0] || "");
+    const row = av[i];
+    const p = String(lsuAllocationValue_(row, allocationColumns, "paymentId", "") || "");
     if (!allocations[p]) allocations[p] = [];
     allocations[p].push({
-      email: String(av[i][1] || ""),
-      name: String(av[i][2] || ""),
-      membershipId: String(av[i][3] || ""),
-      amount: Number(av[i][4] || 0),
-      status: String(av[i][5] || "")
+      email: String(lsuAllocationValue_(row, allocationColumns, "memberEmail", "")),
+      name: String(lsuAllocationValue_(row, allocationColumns, "memberName", "")),
+      membershipId: String(lsuAllocationValue_(row, allocationColumns, "membershipId", "")),
+      amount: Number(lsuAllocationValue_(row, allocationColumns, "amount", 0) || 0),
+      status: String(lsuAllocationValue_(row, allocationColumns, "receiptStatus", "")),
+      allocationType: String(lsuAllocationValue_(row, allocationColumns, "allocationType", "DUES") || "DUES"),
+      eventId: String(lsuAllocationValue_(row, allocationColumns, "eventId", "") || "")
     });
   }
 
@@ -2332,6 +2957,8 @@ function getPendingDuePayments(sessionToken) {
         subDate = String(subDate || "");
       }
 
+      const paymentAllocations = allocations[String(pv[i][0] || "")] || [];
+      const contributionAllocation = paymentAllocations.find(allocation => allocation.allocationType.toUpperCase() === "CONTRIBUTION");
       payments.push({
         paymentId: String(pv[i][0] || ""),
         payer: String(pv[i][1] || ""),
@@ -2342,9 +2969,12 @@ function getPendingDuePayments(sessionToken) {
         upiRefNo: String(pv[i][6] || ""),
         cashReceiverName: String(pv[i][7] || ""),
         cashReceiverPosition: String(pv[i][8] || ""),
+        paymentType: contributionAllocation ? "CONTRIBUTION" : "DUES",
+        eventId: contributionAllocation ? contributionAllocation.eventId : "",
+        eventTitle: contributionAllocation ? (eventTitles[contributionAllocation.eventId] || "") : "",
         status,
         submittedDate: subDate,
-        allocations: allocations[String(pv[i][0] || "")] || []
+        allocations: paymentAllocations
       });
     }
   }
@@ -2359,6 +2989,7 @@ function getFinancialReport(sessionToken) {
   const as = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
   const pv = ps.getDataRange().getValues();
   const av = as.getDataRange().getValues();
+  const allocationColumns = lsuAllocationColumns_(as);
 
   let totalMoneyCollected = 0;
   let totalDuesCollected = 0;
@@ -2418,13 +3049,52 @@ function getFinancialReport(sessionToken) {
     }
   }
 
-  // Dues allocations breakdown from PaymentAllocations
+  // Separate Dues & Event Contributions from PaymentAllocations
   for (let i = 1; i < av.length; i++) {
-    const aStatus = String(av[i][5] || "");
-    const aAmount = Number(av[i][4] || 0);
+    const aStatus = String(lsuAllocationValue_(av[i], allocationColumns, "receiptStatus", "")).trim().toUpperCase();
+    const aAmount = Number(lsuAllocationValue_(av[i], allocationColumns, "amount", 0) || 0);
+    const aType = String(lsuAllocationValue_(av[i], allocationColumns, "allocationType", "DUES") || "DUES").trim().toUpperCase();
     if (aStatus === "PAID / VERIFIED") {
-      totalDuesCollected += aAmount;
+      if (aType === "CONTRIBUTION") {
+        totalContributionsCollected += aAmount;
+      } else {
+        totalDuesCollected += aAmount;
+      }
     }
+  }
+
+  // Event specific breakdown
+  const evSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME);
+  const evData = evSheet ? evSheet.getDataRange().getValues() : [];
+  const eventBreakdown = [];
+  for (let i = 1; i < evData.length; i++) {
+    const evId = String(evData[i][0] || "").trim();
+    if (!evId) continue;
+    const evTitle = String(evData[i][1] || "");
+    const evStatus = String(evData[i][7] || "ACTIVE").toUpperCase();
+    let evCollected = 0;
+    let evContributors = 0;
+    let evPending = 0;
+    for (let a = 1; a < av.length; a++) {
+      if (String(lsuAllocationValue_(av[a], allocationColumns, "allocationType", "DUES") || "DUES").trim().toUpperCase() === "CONTRIBUTION" &&
+        String(lsuAllocationValue_(av[a], allocationColumns, "eventId", "")).trim() === evId) {
+        const aStat = String(lsuAllocationValue_(av[a], allocationColumns, "receiptStatus", "")).trim().toUpperCase();
+        if (aStat === "PAID / VERIFIED") {
+          evCollected += Number(lsuAllocationValue_(av[a], allocationColumns, "amount", 0) || 0);
+          evContributors++;
+        } else if (aStat === "PENDING VERIFICATION") {
+          evPending += Number(lsuAllocationValue_(av[a], allocationColumns, "amount", 0) || 0);
+        }
+      }
+    }
+    eventBreakdown.push({
+      eventId: evId,
+      title: evTitle,
+      status: evStatus,
+      totalCollected: Math.round(evCollected * 100) / 100,
+      verifiedContributors: evContributors,
+      pendingAmount: Math.round(evPending * 100) / 100
+    });
   }
 
   return {
@@ -2433,12 +3103,13 @@ function getFinancialReport(sessionToken) {
       totalMoneyCollected: Math.round(totalMoneyCollected * 100) / 100,
       totalDuesCollected: Math.round(totalDuesCollected * 100) / 100,
       totalContributionsCollected: Math.round(totalContributionsCollected * 100) / 100,
-      contributionsTracked: false,
+      contributionsTracked: true,
       totalUpiCollected: Math.round(totalUpiCollected * 100) / 100,
       totalCashCollected: Math.round(totalCashCollected * 100) / 100,
       verifiedCount,
       totalPendingAmount: Math.round(totalPendingAmount * 100) / 100,
       pendingCount,
+      eventBreakdown,
       verifiedPayments: verifiedPayments.reverse().slice(0, 100)
     }
   };
@@ -2457,19 +3128,22 @@ function lsuPaymentRow_(paymentId) {
 function lsuAllocationRows_(paymentId) {
   ensurePaymentSheets();
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
+  const columns = lsuAllocationColumns_(sheet);
   const values = sheet.getDataRange().getValues();
   const rows = [];
   for (let i = 1; i < values.length; i++) {
-    if (String(values[i][0] || "") === paymentId) rows.push({ row: i + 1, data: values[i] });
+    if (String(lsuAllocationValue_(values[i], columns, "paymentId", "")) === paymentId) rows.push({ row: i + 1, data: values[i] });
   }
-  return { sheet, rows };
+  return { sheet, columns, rows };
 }
 
 function lsuReceiptId_(paymentId) {
   return "LSU-REC-" + paymentId.replace(/^PAY-/, "");
 }
 
-function lsuPaymentReceiptText_(payment, paymentAllocations, recipientMember) {
+function lsuPaymentReceiptText_(payment, paymentAllocations, recipientMember, eventTitle) {
+  const isContribution = Boolean(eventTitle);
+  const typeHeader = isContribution ? `EVENT CONTRIBUTION RECEIPT (${eventTitle})` : "DUES PAYMENT RECEIPT";
   const allocationText = paymentAllocations.map(a =>
     `- ${a.name} (${a.email}) — ₹${Number(a.amount).toFixed(2)}`
   ).join("\n");
@@ -2537,7 +3211,7 @@ function approveDuePayment(payload) {
     ]]);
 
     allocations.rows.forEach(r => {
-      allocations.sheet.getRange(r.row, 6).setValue("PAID / VERIFIED");
+      allocations.sheet.getRange(r.row, allocations.columns.receiptStatus).setValue("PAID / VERIFIED");
     });
 
     const receiptPayment = {
@@ -2557,18 +3231,42 @@ function approveDuePayment(payload) {
       membershipId: String(r.data[3] || ""), amount: Number(r.data[4] || 0)
     }));
 
+    const isContribution = allocations.rows.some(r =>
+      String(lsuAllocationValue_(r.data, allocations.columns, "allocationType", "DUES") || "DUES").trim().toUpperCase() === "CONTRIBUTION"
+    );
+    let eventTitle = "";
+    if (isContribution) {
+      const contributionAllocation = allocations.rows.find(r =>
+        String(lsuAllocationValue_(r.data, allocations.columns, "allocationType", "DUES") || "DUES").trim().toUpperCase() === "CONTRIBUTION"
+      );
+      const firstEventId = String(lsuAllocationValue_(contributionAllocation.data, allocations.columns, "eventId", "")).trim();
+      const evSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME);
+      if (evSheet) {
+        const evData = evSheet.getDataRange().getValues();
+        for (let i = 1; i < evData.length; i++) {
+          if (String(evData[i][0] || "").trim() === firstEventId) {
+            eventTitle = String(evData[i][1] || "");
+            break;
+          }
+        }
+      }
+    }
+
+    const payerSubject = isContribution ? `LSU Event Contribution Receipt - ${receiptId} (${eventTitle})` : `LSU Dues Payment Receipt - ${receiptId}`;
+    const recipientSubject = isContribution ? `LSU Event Contribution Paid on Your Behalf - ${receiptId} (${eventTitle})` : `LSU Dues Paid on Your Behalf - ${receiptId}`;
+
     sendSecureEmail(
       receiptPayment.payerEmail,
-      "LSU Dues Payment Receipt - " + receiptId,
-      lsuPaymentReceiptText_(receiptPayment, receiptAllocations, null)
+      payerSubject,
+      lsuPaymentReceiptText_(receiptPayment, receiptAllocations, null, eventTitle)
     );
 
     receiptAllocations.forEach(member => {
       if (extractEmail(member.email) !== extractEmail(receiptPayment.payerEmail)) {
         sendSecureEmail(
           member.email,
-          "LSU Dues Paid on Your Behalf - " + receiptId,
-          lsuPaymentReceiptText_(receiptPayment, receiptAllocations, member)
+          recipientSubject,
+          lsuPaymentReceiptText_(receiptPayment, receiptAllocations, member, eventTitle)
         );
       }
     });
@@ -2605,12 +3303,16 @@ function rejectDuePayment(payload) {
     payment.sheet.getRange(payment.row, 12, 1, 4).setValues([[
       "", session.email, "", reason
     ]]);
-    allocations.rows.forEach(r => allocations.sheet.getRange(r.row, 6).setValue("REJECTED"));
+    allocations.rows.forEach(r => allocations.sheet.getRange(r.row, allocations.columns.receiptStatus).setValue("REJECTED"));
 
+    const isContribution = allocations.rows.some(r =>
+      String(lsuAllocationValue_(r.data, allocations.columns, "allocationType", "DUES") || "DUES").trim().toUpperCase() === "CONTRIBUTION"
+    );
+    const paymentLabel = isContribution ? "event contribution" : "monthly dues";
     sendSecureEmail(
       String(payment.data[2] || ""),
-      "LSU Dues Payment Rejected - " + paymentId,
-      `Your LSU dues payment (${paymentId}) was rejected.\n\nReason:\n${reason}\n\nPlease contact the Liberian Students Union in Odisha if you need assistance.`
+      `LSU ${isContribution ? "Event Contribution" : "Dues"} Payment Rejected - ${paymentId}`,
+      `Your LSU ${paymentLabel} payment (${paymentId}) was rejected.\n\nReason:\n${reason}\n\nPlease contact the Liberian Students Union in Odisha if you need assistance.`
     );
 
     return auditResult_({ success: true, message: "Payment rejected.", paymentId, status: "REJECTED" }, finishAdminAudit_(auditEntry, "SUCCESS", "Rejection reason recorded"));
@@ -2701,6 +3403,10 @@ function doPost(e) {
     if (action === "verifyPaymentAdminOTP") return jsonResponse(paymentAdminVerifyOTP(payload.email, payload.otp));
     if (action === "getPendingDuePayments") return jsonResponse(getPendingDuePayments(payload.sessionToken));
     if (action === "getFinancialReport") return jsonResponse(getFinancialReport(payload.sessionToken));
+    if (action === "getEvents") return jsonResponse(getEvents(payload));
+    if (action === "createEvent") return jsonResponse(createEvent(payload));
+    if (action === "updateEvent") return jsonResponse(updateEvent(payload));
+    if (action === "submitContributionPayment") return jsonResponse(submitContributionPayment(payload));
     if (action === "approveDuePayment") return jsonResponse(approveDuePayment(payload));
     if (action === "rejectDuePayment") return jsonResponse(rejectDuePayment(payload));
     if (action === "logoutPaymentAdmin") return jsonResponse(logoutPaymentAdmin(payload.sessionToken));
