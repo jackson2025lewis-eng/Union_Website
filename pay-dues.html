@@ -908,23 +908,38 @@
                 <div id="admin-events-grid" class="dues-event-grid" style="display: none;"></div>
               </div>
             </div>
+            <div id="financial-report-dashboard-slot"></div>
           </div>
-          <div class="dues-modal-backdrop" id="duesFinancialReportModal">
-            <div class="dues-modal-card" style="max-width: 660px;">
+          <section id="duesFinancialReportModal" class="dues-financial-report-card" aria-labelledby="financial-report-title" style="display: none;">
+            <div class="dues-financial-report-panel">
               <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e5e7eb; padding-bottom: 12px; margin-bottom: 16px;">
                 <div style="display: flex; align-items: center; gap: 10px;">
                   <i class="fa-solid fa-file-invoice-dollar" style="color: #16a34a; font-size: 1.4rem;"></i>
-                  <h3 style="margin: 0; font-size: 1.15rem; color: var(--text-main);">Financial Report: Dues & Contributions</h3>
+                  <h3 id="financial-report-title" style="margin: 0; font-size: 1.15rem; color: var(--text-main);">Financial Report: Dues & Contributions</h3>
                 </div>
-                <button type="button" id="btnCloseFinancialReport" style="background: none; border: none; font-size: 1.3rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+                <button type="button" id="btnCloseFinancialReport" class="dues-btn-secondary" aria-label="Hide financial report">Hide Report</button>
               </div>
               <div id="financial-report-loading" style="text-align: center; padding: 26px; color: var(--text-muted);">
                 <i class="fa-solid fa-spinner fa-spin"></i> Calculating financial summary from verified records...
               </div>
               <div id="financial-report-content" style="display: none;">
                 <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0; margin-bottom: 14px;">
-                  Live financial report calculated strictly from verified payments and member allocations in the database.
+                  Verified payment totals follow the selected payment year and month. Monthly dues and active event contributions are totaled separately. Closed and archived event collections remain visible in event history but are excluded from collected totals.
                 </p>
+
+                <div class="dues-financial-report-filters">
+                  <div class="dues-form-group">
+                    <label class="dues-label" for="financial-report-year">Report year</label>
+                    <select id="financial-report-year" class="dues-input"></select>
+                  </div>
+                  <div class="dues-form-group">
+                    <label class="dues-label" for="financial-report-month">Month</label>
+                    <select id="financial-report-month" class="dues-input">
+                      <option value="ALL">All months</option>
+                    </select>
+                  </div>
+                  <span id="financial-report-period-label" class="dues-financial-report-period"></span>
+                </div>
 
                 <!-- KPI Summary Cards -->
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px;">
@@ -941,7 +956,7 @@
                   <div style="background: #fefce8; border: 1px solid #fef08a; border-radius: 8px; padding: 14px; text-align: center;">
                     <span style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; color: #854d0e; display: block; margin-bottom: 4px;">Contributions Collected</span>
                     <strong id="rep-contributions-collected" style="font-size: 1.1rem; color: #ca8a04; display: block;">Not tracked</strong>
-                    <span style="font-size: 0.75rem; color: #854d0e; display: block; margin-top: 2px;">No separate contribution records</span>
+                    <span style="font-size: 0.75rem; color: #854d0e; display: block; margin-top: 2px;">Active events only; closed/archived totals excluded</span>
                   </div>
                 </div>
 
@@ -962,8 +977,9 @@
                 </div>
 
                 <!-- Event Contributions Breakdown Table -->
-                <h4 style="margin: 0 0 10px; font-size: 0.95rem; color: var(--text-main);">Event Contributions Breakdown</h4>
-                <div style="max-height: 160px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 18px;">
+                <h4 style="margin: 0 0 6px; font-size: 0.95rem; color: var(--text-main);">Event Contributions History</h4>
+                <p style="font-size: 0.78rem; color: var(--text-muted); margin: 0 0 10px;">Lifetime event amounts are shown here for reference. Closed and archived events are not added to the collected totals above.</p>
+                <div class="dues-financial-report-table-wrap" style="max-height: 220px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px; margin-bottom: 18px;">
                   <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem; text-align: left;">
                     <thead style="background: #f1f5f9; position: sticky; top: 0;">
                       <tr>
@@ -971,18 +987,19 @@
                         <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Occasion / Event Title</th>
                         <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Status</th>
                         <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Contributors</th>
-                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Total Collected</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Selected Period</th>
+                        <th style="padding: 8px 10px; border-bottom: 1px solid #e2e8f0;">Lifetime Collected</th>
                       </tr>
                     </thead>
                     <tbody id="rep-events-tbody">
-                      <tr><td colspan="5" style="text-align: center; padding: 12px; color: var(--text-muted);">No event contribution records.</td></tr>
+                      <tr><td colspan="6" style="text-align: center; padding: 12px; color: var(--text-muted);">No event contribution records.</td></tr>
                     </tbody>
                   </table>
                 </div>
 
                 <!-- Verified Transactions Table -->
                 <h4 style="margin: 0 0 10px; font-size: 0.95rem; color: var(--text-main);">Verified Collections Record</h4>
-                <div style="max-height: 220px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px;">
+                <div class="dues-financial-report-table-wrap" style="max-height: 300px; overflow-y: auto; border: 1px solid #e5e7eb; border-radius: 6px;">
                   <table style="width: 100%; border-collapse: collapse; font-size: 0.82rem; text-align: left;">
                     <thead style="background: #f1f5f9; position: sticky; top: 0;">
                       <tr>
@@ -1000,10 +1017,10 @@
                 </div>
               </div>
               <div style="margin-top: 18px; display: flex; justify-content: flex-end; gap: 8px;">
-                <button type="button" class="dues-btn-secondary" id="btnCloseFinancialReport2">Close</button>
+                <button type="button" class="dues-btn-secondary" id="btnCloseFinancialReport2">Hide Report</button>
               </div>
             </div>
-          </div>
+          </section>
 
           <!-- ADD CO-ADMINISTRATOR MODAL (CHIEF ADMIN ONLY) -->
           <div class="dues-modal-backdrop" id="duesAddAdminModal">

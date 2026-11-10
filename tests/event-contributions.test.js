@@ -925,6 +925,101 @@ test('Event Contributions: Separation of Dues and Event Contributions in Financi
   equal(banquetStat.verifiedContributors, 1);
 });
 
+test('Financial Report: Year and month filters separate dues from active events and preserve closed event history', () => {
+  const { ctx } = createTestContext();
+  equal(ctx.lsuFinancialReportDateKey_(new Date('2026-02-20T12:00:00.000Z')), '2026-02');
+  const duesPayment = ctx.submitDuePayment({
+    sessionToken: 'member-token',
+    paymentMethod: 'CASH',
+    paymentDate: '2026-02-03',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer',
+    confirmed: true,
+    allocations: [{ email: 'member@example.com', amount: 200, year: '2025-2026' }]
+  });
+  ctx.approveDuePayment({ sessionToken: 'finance-token', paymentId: duesPayment.paymentId });
+
+  function createApprovedEvent(title, date, amount, paymentDate, finalStatus) {
+    const event = ctx.createEvent({
+      sessionToken: 'finance-token',
+      title,
+      eventDate: date,
+      targetGroup: 'MEMBERS',
+      memberAmount: 500
+    });
+    const payment = ctx.submitContributionPayment({
+      sessionToken: 'member-token',
+      eventId: event.eventId,
+      members: [{ email: 'member@example.com', amount }],
+      requestId: `report-${event.eventId}`,
+      confirmed: true,
+      paymentMethod: 'CASH',
+      paymentDate,
+      cashReceiverName: 'Finance Officer',
+      cashReceiverPosition: 'Treasurer'
+    });
+    ctx.approveDuePayment({ sessionToken: 'finance-token', paymentId: payment.paymentId });
+    if (finalStatus !== 'ACTIVE') {
+      ctx.updateEvent({ sessionToken: 'finance-token', eventId: event.eventId, status: finalStatus });
+    }
+    return event.eventId;
+  }
+
+  const activeEventId = createApprovedEvent('Active February Event', '2026-02-10', 100, '2026-02-10', 'ACTIVE');
+  const closedEventId = createApprovedEvent('Closed February Event', '2026-02-12', 150, '2026-02-12', 'CLOSED');
+  const archivedEventId = createApprovedEvent('Archived March Event', '2026-03-05', 300, '2026-03-05', 'ARCHIVED');
+  const pendingClosedEvent = ctx.createEvent({
+    sessionToken: 'finance-token',
+    title: 'Closed Event with Pending Receipt',
+    eventDate: '2026-02-20',
+    targetGroup: 'MEMBERS',
+    memberAmount: 500
+  });
+  const pendingClosedPayment = ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: pendingClosedEvent.eventId,
+    members: [{ email: 'member@example.com', amount: 75 }],
+    requestId: `report-${pendingClosedEvent.eventId}`,
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-02-20',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  });
+  ok(pendingClosedPayment.success);
+  ctx.updateEvent({ sessionToken: 'finance-token', eventId: pendingClosedEvent.eventId, status: 'CLOSED' });
+
+  const february = ctx.getFinancialReport('finance-token', { year: '2026', month: '2' }).report;
+  equal(february.totalDuesCollected, 200);
+  equal(february.totalContributionsCollected, 100);
+  equal(february.totalMoneyCollected, 300);
+  equal(february.totalPendingAmount, 0);
+  deepEqual(Array.from(february.availableMonths), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  equal(february.year, 2026);
+  equal(february.month, 2);
+
+  const eventHistory = Object.fromEntries(february.eventBreakdown.map(event => [event.eventId, event]));
+  equal(eventHistory[activeEventId].totalCollected, 100);
+  equal(eventHistory[activeEventId].periodCollected, 100);
+  equal(eventHistory[activeEventId].includedInCollectedTotal, true);
+  equal(eventHistory[closedEventId].totalCollected, 150);
+  equal(eventHistory[closedEventId].periodCollected, 150);
+  equal(eventHistory[closedEventId].includedInCollectedTotal, false);
+  equal(eventHistory[archivedEventId].totalCollected, 300);
+  equal(eventHistory[archivedEventId].periodCollected, 0);
+  equal(eventHistory[archivedEventId].includedInCollectedTotal, false);
+  equal(eventHistory[pendingClosedEvent.eventId].pendingAmount, 75);
+  equal(eventHistory[pendingClosedEvent.eventId].includedInCollectedTotal, false);
+
+  const march = ctx.getFinancialReport('finance-token', { year: '2026', month: '3' }).report;
+  equal(march.totalMoneyCollected, 0);
+  equal(march.totalContributionsCollected, 0);
+  const marchArchived = march.eventBreakdown.find(event => event.eventId === archivedEventId);
+  equal(marchArchived.totalCollected, 300);
+  equal(marchArchived.periodCollected, 300);
+  throws(() => ctx.getFinancialReport('finance-token', { year: '2025', month: 'ALL' }), /Select a report year from 2026 onward/);
+});
+
 test('Event Contributions: Chief Administrator full access, Cash payment, and rejection workflow', () => {
   const { ctx, workbook } = createTestContext();
 
@@ -1083,6 +1178,11 @@ test('Event Contributions: Frontend verification of HTML templates and JS contro
   ok(html.includes('id="duesEditEventModal"'), 'Edit Event Modal must exist');
   ok(html.includes('id="duesEventAuditModal"'), 'Event Audit Modal must exist');
   ok(html.includes('id="rep-events-tbody"'), 'Event Breakdown Table in Financial Report must exist');
+  ok(html.includes('id="financial-report-year"'), 'Financial report year selector must exist');
+  ok(html.includes('id="financial-report-month"'), 'Financial report month selector must exist');
+  ok(html.includes('Lifetime Collected'), 'Event history must display lifetime closed/archived amounts');
+  ok(html.includes('id="financial-report-dashboard-slot"'), 'Financial report must be hosted in the admin dashboard');
+  ok(!html.includes('<div class="dues-modal-backdrop" id="duesFinancialReportModal">'), 'Financial report must not render as a modal popup');
 
   // JS checks
   ok(js.includes('loadMemberEvents'), 'loadMemberEvents controller function must exist');
@@ -1099,4 +1199,6 @@ test('Event Contributions: Frontend verification of HTML templates and JS contro
   ok(css.includes('.dues-tabs'), 'Dues tabs styles must exist');
   ok(css.includes('.dues-event-grid'), 'Event grid styles must exist');
   ok(css.includes('.dues-event-card'), 'Event card styles must exist');
+  ok(css.includes('.dues-financial-report-card'), 'Financial report dashboard card styles must exist');
+  ok(css.includes('.dues-financial-report-filters'), 'Financial report filters must have responsive styles');
 });

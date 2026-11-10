@@ -2166,7 +2166,7 @@
     }
 
     // ------------------------------------------------------------------------
-    // Step 13: Financial Report Modal (Real Database Records Only)
+    // Step 13: Financial Report Dashboard
     // ------------------------------------------------------------------------
     const financialReportModal = document.getElementById('duesFinancialReportModal');
     const btnOpenFinancialReport = document.getElementById('btn-dues-financial-report');
@@ -2174,16 +2174,32 @@
     const btnCloseFinancialReport2 = document.getElementById('btnCloseFinancialReport2');
     const reportLoading = document.getElementById('financial-report-loading');
     const reportContent = document.getElementById('financial-report-content');
+    const reportYearSelect = document.getElementById('financial-report-year');
+    const reportMonthSelect = document.getElementById('financial-report-month');
+    const reportDashboardSlot = document.getElementById('financial-report-dashboard-slot');
+    if (reportDashboardSlot && financialReportModal) reportDashboardSlot.appendChild(financialReportModal);
+    const reportMonthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
 
     function closeFinancialReportModal() {
-      if (financialReportModal) financialReportModal.classList.remove('active');
+      if (financialReportModal) {
+        financialReportModal.classList.remove('active');
+        financialReportModal.style.display = 'none';
+      }
     }
 
     if (btnCloseFinancialReport) btnCloseFinancialReport.addEventListener('click', closeFinancialReportModal);
     if (btnCloseFinancialReport2) btnCloseFinancialReport2.addEventListener('click', closeFinancialReportModal);
 
-    async function loadFinancialReport() {
-      if (financialReportModal) financialReportModal.classList.add('active');
+    async function loadFinancialReport(yearValue, monthValue) {
+      const selectedYear = String(yearValue || (reportYearSelect && reportYearSelect.value) || new Date().getFullYear());
+      const selectedMonth = String(monthValue || (reportMonthSelect && reportMonthSelect.value) || 'ALL');
+      if (financialReportModal) {
+        financialReportModal.style.display = 'block';
+        financialReportModal.classList.add('active');
+      }
       if (reportLoading) {
         reportLoading.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Calculating financial summary from verified records...';
         reportLoading.style.display = 'block';
@@ -2193,17 +2209,52 @@
       try {
         const result = await sendBackendRequest({
           action: 'getFinancialReport',
-          sessionToken: state.adminSessionToken
+          sessionToken: state.adminSessionToken,
+          year: selectedYear,
+          month: selectedMonth
         });
 
         if (result && result.success && result.report) {
           const rep = result.report;
+          if (reportYearSelect) {
+            const years = Array.isArray(rep.availableYears) ? rep.availableYears.map(String) : [selectedYear];
+            reportYearSelect.replaceChildren();
+            years.forEach(year => {
+              const option = document.createElement('option');
+              option.value = year;
+              option.textContent = year;
+              reportYearSelect.appendChild(option);
+            });
+            reportYearSelect.value = String(rep.year || selectedYear);
+          }
+          if (reportMonthSelect) {
+            const availableMonths = Array.isArray(rep.availableMonths) ? rep.availableMonths : [];
+            reportMonthSelect.replaceChildren();
+            const allMonthsOption = document.createElement('option');
+            allMonthsOption.value = 'ALL';
+            allMonthsOption.textContent = 'All months';
+            reportMonthSelect.appendChild(allMonthsOption);
+            availableMonths.forEach(month => {
+              const option = document.createElement('option');
+              option.value = String(month);
+              option.textContent = reportMonthNames[Number(month) - 1] || String(month);
+              reportMonthSelect.appendChild(option);
+            });
+            const requestedMonth = String(rep.month || selectedMonth);
+            reportMonthSelect.value = availableMonths.map(String).includes(requestedMonth) ? requestedMonth : 'ALL';
+          }
+          const periodLabel = document.getElementById('financial-report-period-label');
+          if (periodLabel) {
+            const year = String(rep.year || selectedYear);
+            const month = Number(rep.month);
+            periodLabel.textContent = month >= 1 && month <= 12
+              ? `Showing ${reportMonthNames[month - 1]} ${year}`
+              : `Showing all months in ${year}`;
+          }
           document.getElementById('rep-total-collected').textContent = `₹${(Number(rep.totalMoneyCollected) || 0).toFixed(2)}`;
           document.getElementById('rep-verified-count').textContent = `${rep.verifiedCount || 0} verified transactions`;
           document.getElementById('rep-dues-collected').textContent = `₹${(Number(rep.totalDuesCollected) || 0).toFixed(2)}`;
-          document.getElementById('rep-contributions-collected').textContent = rep.contributionsTracked === true
-            ? `₹${(Number(rep.totalContributionsCollected) || 0).toFixed(2)}`
-            : 'Not tracked';
+          document.getElementById('rep-contributions-collected').textContent = `₹${(Number(rep.totalContributionsCollected) || 0).toFixed(2)}`;
           document.getElementById('rep-upi-total').textContent = `₹${(Number(rep.totalUpiCollected) || 0).toFixed(2)}`;
           document.getElementById('rep-cash-total').textContent = `₹${(Number(rep.totalCashCollected) || 0).toFixed(2)}`;
           document.getElementById('rep-pending-amount').textContent = `₹${(Number(rep.totalPendingAmount) || 0).toFixed(2)}`;
@@ -2233,21 +2284,26 @@
 
                 const tdContributors = document.createElement('td');
                 tdContributors.style.padding = '8px 10px';
-                tdContributors.textContent = String(evt.contributorsCount || 0);
+                tdContributors.textContent = String(evt.verifiedContributors || evt.contributorsCount || 0);
+
+                const tdPeriodCollected = document.createElement('td');
+                tdPeriodCollected.style.padding = '8px 10px';
+                tdPeriodCollected.style.fontWeight = '600';
+                tdPeriodCollected.textContent = `₹${(Number(evt.periodCollected) || 0).toFixed(2)}`;
 
                 const tdCollected = document.createElement('td');
                 tdCollected.style.padding = '8px 10px';
                 tdCollected.style.fontWeight = '600';
                 tdCollected.style.color = '#15803d';
-                tdCollected.textContent = `₹${(Number(evt.totalCollected) || 0).toFixed(2)}`;
+                tdCollected.textContent = `₹${(Number(evt.totalCollected) || 0).toFixed(2)}${evt.includedInCollectedTotal === false ? ' (excluded)' : ''}`;
 
-                tr.append(tdId, tdTitle, tdStatus, tdContributors, tdCollected);
+                tr.append(tdId, tdTitle, tdStatus, tdContributors, tdPeriodCollected, tdCollected);
                 repEventsTbody.appendChild(tr);
               });
             } else {
               const emptyRow = document.createElement('tr');
               const emptyCell = document.createElement('td');
-              emptyCell.colSpan = 5;
+              emptyCell.colSpan = 6;
               emptyCell.style.textAlign = 'center';
               emptyCell.style.padding = '12px';
               emptyCell.style.color = 'var(--text-muted)';
@@ -2378,7 +2434,12 @@
       }
     }
 
-    if (btnOpenFinancialReport) btnOpenFinancialReport.addEventListener('click', loadFinancialReport);
+    if (btnOpenFinancialReport) btnOpenFinancialReport.addEventListener('click', () => {
+      loadFinancialReport();
+      financialReportModal?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    if (reportYearSelect) reportYearSelect.addEventListener('change', () => loadFinancialReport(reportYearSelect.value, 'ALL'));
+    if (reportMonthSelect) reportMonthSelect.addEventListener('change', () => loadFinancialReport(reportYearSelect?.value, reportMonthSelect.value));
 
     // Default dates
     const savedToken = sessionStorage.getItem('lsuPaymentAdminSessionToken');

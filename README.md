@@ -46,7 +46,7 @@ The website is currently in a highly polished, production-ready state. Recent mi
 
 4. **Content Integration**: Successfully laid out and styled the core pages, including complex components like the Alumni Carousel, the History Timeline grid, and the responsive Announcements section.
 
-5. **Member Payments**: The payment portal supports monthly dues and event contributions. Contribution events can target Members, Leaders, or All; member categories are derived from the registered position, and only approved payments count as collected.
+5. **Member Payments**: The payment portal supports monthly dues and event contributions. Contribution events can target Members, Leaders, or All; member categories are derived from the registered position, and only approved payments count as collected. The financial dashboard filters payment records by year and month, reports dues separately from active-event contributions, and keeps closed or archived event lifetime collections visible without including them in active totals.
 
 The payment portal depends on its Google Apps Script backend and Google Sheets database. Backend changes in this repository have not been deployed to the live Apps Script project, and the test suite uses mocked Google services; validate the production workbook and Apps Script deployment separately before going live.
 

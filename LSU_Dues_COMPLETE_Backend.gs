@@ -3226,138 +3226,245 @@ function getPendingDuePayments(sessionToken) {
   return { success: true, payments };
 }
 
-function getFinancialReport(sessionToken) {
+function lsuFinancialReportDateKey_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) {
+    const formatted = Utilities.formatDate(value, Session.getScriptTimeZone(), "yyyy-MM");
+    const formattedMatch = String(formatted || "").match(/^(\d{4})-(\d{2})/);
+    if (formattedMatch) return `${formattedMatch[1]}-${formattedMatch[2]}`;
+  }
+  const raw = String(value || "").trim();
+  const isoMatch = raw.match(/^(\d{4})-(\d{2})/);
+  if (isoMatch) return `${isoMatch[1]}-${isoMatch[2]}`;
+  const parsed = new Date(raw);
+  return isNaN(parsed.getTime())
+    ? ""
+    : Utilities.formatDate(parsed, Session.getScriptTimeZone(), "yyyy-MM");
+}
+
+function getFinancialReport(sessionToken, filters) {
   lsuRequirePaymentAdmin_(sessionToken);
-  ensurePaymentSheets();
-
-  const ps = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME);
-  const as = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
-  const pv = ps.getDataRange().getValues();
-  const av = as.getDataRange().getValues();
-  const allocationColumns = lsuAllocationColumns_(as);
-
-  let totalMoneyCollected = 0;
-  let totalDuesCollected = 0;
-  let totalContributionsCollected = 0;
-  let totalUpiCollected = 0;
-  let totalCashCollected = 0;
-  let verifiedCount = 0;
-
-  let totalPendingAmount = 0;
-  let pendingCount = 0;
-
-  const verifiedPayments = [];
-
-  for (let i = 1; i < pv.length; i++) {
-    const row = pv[i];
-    const paymentId = String(row[0] || "");
-    const payer = String(row[1] || "");
-    const payerEmail = String(row[2] || "");
-    const method = String(row[3] || "");
-    const totalAmount = Number(row[4] || 0);
-    const paymentDate = String(row[5] || "");
-    const upiRef = String(row[6] || "");
-    const cashReceiver = String(row[7] || "");
-    const status = String(row[9] || "");
-    let approvedDate = row[11];
-    if (approvedDate instanceof Date) {
-      approvedDate = formatExactDateTime(approvedDate);
-    } else {
-      approvedDate = String(approvedDate || "");
-    }
-    const receiptId = String(row[13] || "");
-
-    if (status === "PAID / VERIFIED") {
-      totalMoneyCollected += totalAmount;
-      verifiedCount++;
-      if (method === "ONLINE / UPI") {
-        totalUpiCollected += totalAmount;
-      } else if (method === "CASH") {
-        totalCashCollected += totalAmount;
-      }
-      verifiedPayments.push({
-        paymentId,
-        payer,
-        payerEmail,
-        paymentMethod: method,
-        totalAmount,
-        paymentDate,
-        upiRef,
-        cashReceiver,
-        approvedDate,
-        receiptId,
-        status
-      });
-    } else if (status === "PENDING VERIFICATION") {
-      totalPendingAmount += totalAmount;
-      pendingCount++;
-    }
+  filters = filters || {};
+  const requestedYear = String(filters.year || "").trim();
+  const requestedMonth = String(filters.month || "ALL").trim().toUpperCase();
+  const reportYear = requestedYear ? Number(requestedYear) : null;
+  const reportMonth = requestedMonth === "ALL" ? null : Number(requestedMonth);
+  if (reportYear !== null && (!Number.isInteger(reportYear) || reportYear < 2026)) {
+    throw publicError_("Select a report year from 2026 onward.");
+  }
+  if (reportMonth !== null && (!Number.isInteger(reportMonth) || reportMonth < 1 || reportMonth > 12)) {
+    throw publicError_("Select a valid report month.");
   }
 
-  // Separate Dues & Event Contributions from PaymentAllocations
-  for (let i = 1; i < av.length; i++) {
-    const aStatus = String(lsuAllocationValue_(av[i], allocationColumns, "receiptStatus", "")).trim().toUpperCase();
-    const aAmount = Number(lsuAllocationValue_(av[i], allocationColumns, "amount", 0) || 0);
-    const aType = String(lsuAllocationValue_(av[i], allocationColumns, "allocationType", "DUES") || "DUES").trim().toUpperCase();
-    if (aStatus === "PAID / VERIFIED") {
-      if (aType === "CONTRIBUTION") {
-        totalContributionsCollected += aAmount;
-      } else {
-        totalDuesCollected += aAmount;
-      }
-    }
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw publicError_("Financial report is busy refreshing payment records. Please retry.");
   }
 
-  // Event specific breakdown
-  const evSheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME);
-  const evData = evSheet ? evSheet.getDataRange().getValues() : [];
-  const eventBreakdown = [];
-  for (let i = 1; i < evData.length; i++) {
-    const evId = String(evData[i][0] || "").trim();
-    if (!evId) continue;
-    const evTitle = String(evData[i][1] || "");
-    const evStatus = String(evData[i][7] || "ACTIVE").toUpperCase();
-    let evCollected = 0;
-    let evContributors = 0;
-    let evPending = 0;
-    for (let a = 1; a < av.length; a++) {
-      if (String(lsuAllocationValue_(av[a], allocationColumns, "allocationType", "DUES") || "DUES").trim().toUpperCase() === "CONTRIBUTION" &&
-        String(lsuAllocationValue_(av[a], allocationColumns, "eventId", "")).trim() === evId) {
-        const aStat = String(lsuAllocationValue_(av[a], allocationColumns, "receiptStatus", "")).trim().toUpperCase();
-        if (aStat === "PAID / VERIFIED") {
-          evCollected += Number(lsuAllocationValue_(av[a], allocationColumns, "amount", 0) || 0);
-          evContributors++;
-        } else if (aStat === "PENDING VERIFICATION") {
-          evPending += Number(lsuAllocationValue_(av[a], allocationColumns, "amount", 0) || 0);
+  try {
+    ensurePaymentSheets();
+
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ps = ss.getSheetByName(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME);
+    const as = ss.getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
+    const pv = ps.getDataRange().getValues();
+    const av = as.getDataRange().getValues();
+    const allocationColumns = lsuAllocationColumns_(as);
+
+    const evSheet = ss.getSheetByName(LSU_PAYMENT_CONFIG.EVENTS_SHEET_NAME);
+    const evData = evSheet ? evSheet.getDataRange().getValues() : [];
+    const eventById = Object.create(null);
+    const yearSet = Object.create(null);
+    const paymentById = Object.create(null);
+
+    for (let i = 1; i < evData.length; i++) {
+      const eventId = String(evData[i][0] || "").trim();
+      if (!eventId) continue;
+      eventById[eventId] = {
+        eventId,
+        title: String(evData[i][1] || ""),
+        eventDate: String(evData[i][3] || ""),
+        status: String(evData[i][7] || "ACTIVE").trim().toUpperCase(),
+        totalCollected: 0,
+        periodCollected: 0,
+        verifiedContributors: Object.create(null),
+        pendingAmount: 0
+      };
+    }
+
+    for (let i = 1; i < pv.length; i++) {
+      const row = pv[i];
+      const paymentId = String(row[0] || "").trim();
+      if (!paymentId) continue;
+      const paymentKey = lsuFinancialReportDateKey_(row[5]);
+      if (paymentKey) {
+        const parts = paymentKey.split("-");
+        const year = Number(parts[0]);
+        if (year >= 2026) {
+          yearSet[year] = true;
         }
       }
+      paymentById[paymentId] = {
+        paymentId,
+        payer: String(row[1] || ""),
+        payerEmail: String(row[2] || ""),
+        paymentMethod: String(row[3] || ""),
+        totalAmount: Number(row[4] || 0),
+        paymentDate: String(row[5] || ""),
+        upiRef: String(row[6] || ""),
+        cashReceiver: String(row[7] || ""),
+        status: String(row[9] || "").trim().toUpperCase(),
+        approvedDate: row[11] instanceof Date ? formatExactDateTime(row[11]) : String(row[11] || ""),
+        receiptId: String(row[13] || ""),
+        hasAllocations: false,
+        periodDuesAmount: 0,
+        periodContributionAmount: 0,
+        periodVerifiedAmount: 0,
+        periodPendingAmount: 0
+      };
     }
-    eventBreakdown.push({
-      eventId: evId,
-      title: evTitle,
-      status: evStatus,
-      totalCollected: Math.round(evCollected * 100) / 100,
-      verifiedContributors: evContributors,
-      pendingAmount: Math.round(evPending * 100) / 100
-    });
-  }
 
-  return {
-    success: true,
-    report: {
-      totalMoneyCollected: Math.round(totalMoneyCollected * 100) / 100,
-      totalDuesCollected: Math.round(totalDuesCollected * 100) / 100,
-      totalContributionsCollected: Math.round(totalContributionsCollected * 100) / 100,
-      contributionsTracked: true,
-      totalUpiCollected: Math.round(totalUpiCollected * 100) / 100,
-      totalCashCollected: Math.round(totalCashCollected * 100) / 100,
-      verifiedCount,
-      totalPendingAmount: Math.round(totalPendingAmount * 100) / 100,
-      pendingCount,
-      eventBreakdown,
-      verifiedPayments: verifiedPayments.reverse().slice(0, 100)
+    const currentYear = new Date().getFullYear();
+    yearSet[Math.max(2026, currentYear)] = true;
+
+    let totalUpiCollected = 0;
+    let totalCashCollected = 0;
+    let totalPendingAmount = 0;
+    const verifiedPaymentIds = Object.create(null);
+    const pendingPaymentIds = Object.create(null);
+
+    for (let i = 1; i < av.length; i++) {
+      const row = av[i];
+      const paymentId = String(lsuAllocationValue_(row, allocationColumns, "paymentId", "")).trim();
+      const payment = paymentById[paymentId];
+      if (!payment) continue;
+      payment.hasAllocations = true;
+      const allocationStatus = String(lsuAllocationValue_(row, allocationColumns, "receiptStatus", "")).trim().toUpperCase();
+      if (allocationStatus !== "PAID / VERIFIED" && allocationStatus !== "PENDING VERIFICATION") continue;
+      if (allocationStatus !== payment.status) continue;
+      const amount = Number(lsuAllocationValue_(row, allocationColumns, "amount", 0) || 0);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      const allocationType = String(lsuAllocationValue_(row, allocationColumns, "allocationType", "DUES") || "DUES").trim().toUpperCase();
+      const eventId = String(lsuAllocationValue_(row, allocationColumns, "eventId", "")).trim();
+      const event = eventById[eventId];
+      const isActiveContribution = allocationType !== "CONTRIBUTION" || Boolean(event && event.status === "ACTIVE");
+      const paymentKey = lsuFinancialReportDateKey_(payment.paymentDate);
+      const paymentParts = paymentKey ? paymentKey.split("-") : [];
+      const inSelectedPeriod = reportYear === null ||
+        (Number(paymentParts[0]) === reportYear && (reportMonth === null || Number(paymentParts[1]) === reportMonth));
+
+      if (allocationType === "CONTRIBUTION" && event) {
+        if (allocationStatus === "PAID / VERIFIED") {
+          event.totalCollected += amount;
+          if (inSelectedPeriod) event.periodCollected += amount;
+          event.verifiedContributors[String(lsuAllocationValue_(row, allocationColumns, "memberEmail", "")).trim().toLowerCase()] = true;
+        } else {
+          event.pendingAmount += amount;
+        }
+      }
+      if (!isActiveContribution) continue;
+
+      if (!inSelectedPeriod) continue;
+      if (allocationStatus === "PAID / VERIFIED") {
+        payment.periodVerifiedAmount += amount;
+        if (allocationType === "CONTRIBUTION") payment.periodContributionAmount += amount;
+        else payment.periodDuesAmount += amount;
+        if (payment.paymentMethod === "ONLINE / UPI") totalUpiCollected += amount;
+        else if (payment.paymentMethod === "CASH") totalCashCollected += amount;
+        verifiedPaymentIds[paymentId] = true;
+      } else {
+        payment.periodPendingAmount += amount;
+        totalPendingAmount += amount;
+        pendingPaymentIds[paymentId] = true;
+      }
     }
-  };
+
+    for (const paymentId in paymentById) {
+      const payment = paymentById[paymentId];
+      if (payment.status !== "PENDING VERIFICATION" || payment.hasAllocations) continue;
+      const paymentKey = lsuFinancialReportDateKey_(payment.paymentDate);
+      const paymentParts = paymentKey ? paymentKey.split("-") : [];
+      const inSelectedPeriod = reportYear === null ||
+        (Number(paymentParts[0]) === reportYear && (reportMonth === null || Number(paymentParts[1]) === reportMonth));
+      if (!inSelectedPeriod) continue;
+      const amount = payment.totalAmount;
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      totalPendingAmount += amount;
+      pendingPaymentIds[paymentId] = true;
+    }
+
+    const eventBreakdown = Object.keys(eventById).map(eventId => {
+      const event = eventById[eventId];
+      return {
+        eventId: event.eventId,
+        title: event.title,
+        eventDate: event.eventDate,
+        status: event.status,
+        totalCollected: Math.round(event.totalCollected * 100) / 100,
+        periodCollected: Math.round(event.periodCollected * 100) / 100,
+        verifiedContributors: Object.keys(event.verifiedContributors).length,
+        pendingAmount: Math.round(event.pendingAmount * 100) / 100,
+        includedInCollectedTotal: event.status === "ACTIVE"
+      };
+    });
+
+    const verifiedPayments = Object.keys(verifiedPaymentIds).map(paymentId => {
+      const payment = paymentById[paymentId];
+      return {
+        paymentId: payment.paymentId,
+        payer: payment.payer,
+        payerEmail: payment.payerEmail,
+        paymentMethod: payment.paymentMethod,
+        totalAmount: Math.round(payment.periodVerifiedAmount * 100) / 100,
+        paymentDate: payment.paymentDate,
+        upiRef: payment.upiRef,
+        cashReceiver: payment.cashReceiver,
+        approvedDate: payment.approvedDate,
+        receiptId: payment.receiptId,
+        status: payment.status
+      };
+    }).sort((a, b) => String(b.approvedDate || b.paymentDate).localeCompare(String(a.approvedDate || a.paymentDate))).slice(0, 100);
+
+    const recordedYears = Object.keys(yearSet).map(Number).filter(year => year >= 2026);
+    const lastYear = Math.max(2026, currentYear, ...recordedYears);
+    const availableYears = [];
+    for (let year = 2026; year <= lastYear; year++) availableYears.push(year);
+    const availableMonths = Array.from({ length: 12 }, (_, index) => index + 1);
+
+    const filteredDuesCollected = Math.round(Object.keys(paymentById).reduce((sum, paymentId) => {
+      const payment = paymentById[paymentId];
+      return sum + (payment.status === "PAID / VERIFIED" ? payment.periodDuesAmount || 0 : 0);
+    }, 0) * 100) / 100;
+    const filteredContributionsCollected = Math.round(Object.keys(paymentById).reduce((sum, paymentId) => {
+      const payment = paymentById[paymentId];
+      return sum + (payment.status === "PAID / VERIFIED" ? payment.periodContributionAmount || 0 : 0);
+    }, 0) * 100) / 100;
+    const totalMoneyCollected = Math.round((filteredDuesCollected + filteredContributionsCollected) * 100) / 100;
+
+    return {
+      success: true,
+      report: {
+        year: reportYear,
+        month: reportMonth,
+        availableYears,
+        availableMonths,
+        totalMoneyCollected,
+        totalDuesCollected: filteredDuesCollected,
+        totalContributionsCollected: filteredContributionsCollected,
+        contributionsTracked: true,
+        totalUpiCollected: Math.round(totalUpiCollected * 100) / 100,
+        totalCashCollected: Math.round(totalCashCollected * 100) / 100,
+        verifiedCount: Object.keys(verifiedPaymentIds).length,
+        totalPendingAmount: Math.round(totalPendingAmount * 100) / 100,
+        pendingCount: Object.keys(pendingPaymentIds).length,
+        eventBreakdown,
+        verifiedPayments
+      }
+    };
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function lsuPaymentRow_(paymentId) {
@@ -3647,7 +3754,7 @@ function doPost(e) {
     if (action === "sendPaymentAdminOTP") return jsonResponse(paymentAdminSendOTP(payload.email));
     if (action === "verifyPaymentAdminOTP") return jsonResponse(paymentAdminVerifyOTP(payload.email, payload.otp));
     if (action === "getPendingDuePayments") return jsonResponse(getPendingDuePayments(payload.sessionToken));
-    if (action === "getFinancialReport") return jsonResponse(getFinancialReport(payload.sessionToken));
+    if (action === "getFinancialReport") return jsonResponse(getFinancialReport(payload.sessionToken, payload));
     if (action === "getEvents") return jsonResponse(getEvents(payload));
     if (action === "getEventMemberBalance") return jsonResponse(getEventMemberBalance(payload));
     if (action === "createEvent") return jsonResponse(createEvent(payload));
