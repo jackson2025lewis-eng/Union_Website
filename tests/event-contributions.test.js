@@ -12,6 +12,7 @@ class Sheet {
   appendRow(row) { this.rows.push([...row]); }
   getLastRow() { return this.rows.length; }
   getLastColumn() { return this.rows.reduce((max, r) => Math.max(max, r.length), 0); }
+  deleteRow(row) { this.rows.splice(row - 1, 1); }
   getDataRange() {
     return {
       getValues: () => this.rows.map(r => [...r])
@@ -155,6 +156,7 @@ function createTestContext(options = {}) {
 
   const cache = new Cache();
   const sentEmails = [];
+  const lockStats = { acquisitions: 0, releases: 0, held: false };
 
   const ctx = vm.createContext({
     SpreadsheetApp: {
@@ -168,8 +170,15 @@ function createTestContext(options = {}) {
     },
     LockService: {
       getScriptLock: () => ({
-        waitLock: () => {},
-        releaseLock: () => {}
+        waitLock: () => {
+          if (lockStats.held) throw new Error('Script lock is already held.');
+          lockStats.held = true;
+          lockStats.acquisitions++;
+        },
+        releaseLock: () => {
+          lockStats.held = false;
+          lockStats.releases++;
+        }
       })
     },
     MailApp: {
@@ -238,7 +247,7 @@ function createTestContext(options = {}) {
     member: { email: 'leader@example.com', name: 'Alice President', membershipId: 'LSU-2026-002' }
   }));
 
-  return { ctx, workbook, cache, sentEmails, props };
+  return { ctx, workbook, cache, sentEmails, props, lockStats };
 }
 
 test('Event Contributions: Membership position classification', () => {
@@ -443,13 +452,13 @@ test('Event Contributions: Multi-member payment (self + up to two other register
       paymentMethod: 'ONLINE / UPI',
       paymentDate: '2026-09-01',
       upiRefNo: 'UPI-TOO-MANY',
-      otherEmails: ['leader@example.com', 'member2@example.com', 'other@example.com']
+      otherEmails: ['leader@example.com', 'member2@example.com', 'other@example.com', 'other2@example.com']
     });
-  }, /up to two other registered members/);
+  }, /one or two other registered members/);
 });
 
-test('Event Contributions: Duplicate payment prevention', () => {
-  const { ctx } = createTestContext();
+test('Event Contributions: Duplicate request IDs are idempotent while installments remain available', () => {
+  const { ctx, workbook } = createTestContext();
 
   const evRes = ctx.createEvent({
     sessionToken: 'finance-token',
@@ -470,22 +479,40 @@ test('Event Contributions: Duplicate payment prevention', () => {
     paymentDate: '2026-10-01',
     cashReceiverName: 'Finance Officer',
     cashReceiverPosition: 'Financial Secretary',
-    payForSelf: true
+    payForSelf: true,
+    requestId: 'event-request-duplicate'
   });
 
-  // Attempting to submit a second payment for the same member to this event throws duplicate error
-  throws(() => {
-    ctx.submitContributionPayment({
-      sessionToken: 'member-token',
-      eventId: eventId,
-      confirmed: true,
-      paymentMethod: 'CASH',
-      paymentDate: '2026-10-01',
-      cashReceiverName: 'Finance Officer',
-      cashReceiverPosition: 'Financial Secretary',
-      payForSelf: true
-    });
-  }, /already pending verification|already contributed/);
+  const paymentSheet = workbook.getSheetByName('Payments');
+  const allocationSheet = workbook.getSheetByName('PaymentAllocations');
+  const paymentsBeforeRetry = paymentSheet.getLastRow();
+  const allocationsBeforeRetry = allocationSheet.getLastRow();
+  const retry = ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: eventId,
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-10-01',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Financial Secretary',
+    payForSelf: true,
+    requestId: 'event-request-duplicate'
+  });
+  equal(retry.duplicate, true);
+  equal(retry.paymentId, firstPayment.paymentId);
+  equal(paymentSheet.getLastRow(), paymentsBeforeRetry);
+  equal(allocationSheet.getLastRow(), allocationsBeforeRetry);
+  throws(() => ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: eventId,
+    requestId: 'event-request-duplicate',
+    members: [{ email: 'member@example.com', amount: 99 }],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-10-01',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Financial Secretary'
+  }), /already used with different recipients or installment amounts/);
 
   ctx.approveDuePayment({ sessionToken: 'finance-token', paymentId: firstPayment.paymentId });
   throws(() => {
@@ -497,9 +524,285 @@ test('Event Contributions: Duplicate payment prevention', () => {
       paymentDate: '2026-10-01',
       cashReceiverName: 'Finance Officer',
       cashReceiverPosition: 'Financial Secretary',
-      payForSelf: true
+      payForSelf: true,
+      requestId: 'event-request-new'
     });
-  }, /already contributed/);
+  }, /exact maximum you can submit now is ₹0\.00/);
+});
+
+test('Event Contributions: Concurrent retries with the same request ID create one payment', async () => {
+  const { ctx, workbook, lockStats } = createTestContext();
+  const event = ctx.createEvent({
+    sessionToken: 'finance-token',
+    title: 'Concurrent Retry',
+    eventDate: '2026-12-10',
+    targetGroup: 'MEMBERS',
+    memberAmount: 500
+  });
+  const payload = {
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    requestId: 'concurrent-same-request',
+    members: [{ email: 'member@example.com', amount: 250 }],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-01',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  };
+
+  const results = await Promise.all([
+    Promise.resolve().then(() => ctx.submitContributionPayment(payload)),
+    Promise.resolve().then(() => ctx.submitContributionPayment(payload))
+  ]);
+  equal(results.every(result => result.success), true);
+  equal(results.filter(result => result.duplicate === true).length, 1);
+  equal(results[0].paymentId, results[1].paymentId);
+  equal(workbook.getSheetByName('Payments').getLastRow(), 2);
+  equal(workbook.getSheetByName('PaymentAllocations').getLastRow(), 2);
+  equal(lockStats.held, false);
+  equal(lockStats.acquisitions, lockStats.releases);
+});
+
+test('Event Contributions: Concurrent distinct installments cannot exceed available balance', async () => {
+  const { ctx, workbook, lockStats } = createTestContext();
+  const event = ctx.createEvent({
+    sessionToken: 'finance-token',
+    title: 'Concurrent Installments',
+    eventDate: '2026-12-11',
+    targetGroup: 'MEMBERS',
+    memberAmount: 500
+  });
+  const createPayload = requestId => ({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    requestId,
+    members: [{ email: 'member@example.com', amount: 300 }],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-01',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  });
+
+  const outcomes = await Promise.allSettled([
+    Promise.resolve().then(() => ctx.submitContributionPayment(createPayload('concurrent-installment-1'))),
+    Promise.resolve().then(() => ctx.submitContributionPayment(createPayload('concurrent-installment-2')))
+  ]);
+  equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+  equal(outcomes.filter(result => result.status === 'rejected').length, 1);
+  const rejection = outcomes.find(result => result.status === 'rejected');
+  ok(rejection.reason.message.includes('exact maximum you can submit now is ₹200.00'));
+  const balance = ctx.getEventMemberBalance({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    targetEmail: 'member@example.com'
+  }).balance;
+  equal(balance.pendingAmount, 300);
+  equal(balance.availableAmount, 200);
+  equal(workbook.getSheetByName('Payments').getLastRow(), 2);
+  equal(workbook.getSheetByName('PaymentAllocations').getLastRow(), 2);
+  equal(lockStats.held, false);
+  equal(lockStats.acquisitions, lockStats.releases);
+});
+
+test('Event Contributions: Failed multi-recipient write rolls back incomplete records', () => {
+  const { ctx, workbook, lockStats } = createTestContext();
+  const event = ctx.createEvent({
+    sessionToken: 'finance-token',
+    title: 'Rollback Test',
+    eventDate: '2026-12-12',
+    targetGroup: 'ALL',
+    memberAmount: 500,
+    leaderAmount: 900
+  });
+  ctx.ensurePaymentSheets();
+  const payments = workbook.getSheetByName('Payments');
+  const allocations = workbook.getSheetByName('PaymentAllocations');
+  const originalAppendRow = allocations.appendRow.bind(allocations);
+  let appendAttempts = 0;
+  allocations.appendRow = row => {
+    appendAttempts++;
+    if (appendAttempts === 2) throw new Error('injected allocation write failure');
+    return originalAppendRow(row);
+  };
+
+  throws(() => ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    requestId: 'rollback-test-request',
+    members: [
+      { email: 'member@example.com', amount: 100 },
+      { email: 'leader@example.com', amount: 200 }
+    ],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-01',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  }), /Payment could not be saved completely\. No payment was recorded/);
+
+  equal(payments.getLastRow(), 1);
+  equal(allocations.getLastRow(), 1);
+  equal(lockStats.held, false);
+  equal(lockStats.acquisitions, lockStats.releases);
+});
+
+test('Event Contributions: Partial installments reserve pending balances and expose exact overpayment limit', () => {
+  const { ctx } = createTestContext();
+  const event = ctx.createEvent({
+    sessionToken: 'finance-token',
+    title: 'Installment Fund',
+    eventDate: '2026-12-15',
+    targetGroup: 'ALL',
+    memberAmount: 500,
+    leaderAmount: 800
+  });
+
+  const first = ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    members: [{ email: 'member@example.com', amount: 200 }],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-01',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  });
+  equal(first.totalAmount, 200);
+
+  const balanceWhilePending = ctx.getEventMemberBalance({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    targetEmail: 'member@example.com'
+  }).balance;
+  equal(balanceWhilePending.requiredAmount, 500);
+  equal(balanceWhilePending.approvedAmount, 0);
+  equal(balanceWhilePending.pendingAmount, 200);
+  equal(balanceWhilePending.remainingBalance, 500);
+  equal(balanceWhilePending.availableAmount, 300);
+
+  throws(() => ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    members: [{ email: 'member@example.com', amount: 301 }],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-02',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  }), /exact maximum you can submit now is ₹300\.00/);
+
+  const exactRemainder = ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    members: [{ email: 'member@example.com', amount: 300 }],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-02',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  });
+  equal(exactRemainder.totalAmount, 300);
+
+  ctx.approveDuePayment({ sessionToken: 'finance-token', paymentId: first.paymentId });
+  ctx.approveDuePayment({ sessionToken: 'finance-token', paymentId: exactRemainder.paymentId });
+  const paidBalance = ctx.getEvents({ memberSessionToken: 'member-token' }).events
+    .find(item => item.eventId === event.eventId);
+  equal(paidBalance.myApprovedAmount, 500);
+  equal(paidBalance.myPendingAmount, 0);
+  equal(paidBalance.myRemainingBalance, 0);
+  equal(paidBalance.myAvailableAmount, 0);
+  equal(paidBalance.myPaymentStatus, 'PAID / VERIFIED');
+});
+
+test('Event Contributions: Rejected installment does not count and restores available balance', () => {
+  const { ctx } = createTestContext();
+  const event = ctx.createEvent({
+    sessionToken: 'finance-token',
+    title: 'Rejected Installment',
+    eventDate: '2026-12-16',
+    targetGroup: 'MEMBERS',
+    memberAmount: 500
+  });
+  const payment = ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    members: [{ email: 'member@example.com', amount: 175 }],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-02',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  });
+  ctx.rejectDuePayment({
+    sessionToken: 'finance-token',
+    paymentId: payment.paymentId,
+    rejectionReason: 'Receipt could not be verified'
+  });
+
+  const balance = ctx.getEventMemberBalance({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    targetEmail: 'member@example.com'
+  }).balance;
+  equal(balance.approvedAmount, 0);
+  equal(balance.pendingAmount, 0);
+  equal(balance.remainingBalance, 500);
+  equal(balance.availableAmount, 500);
+});
+
+test('Event Contributions: Pay Balance balance lookup for one or two other members', () => {
+  const { ctx, workbook } = createTestContext();
+  const event = ctx.createEvent({
+    sessionToken: 'finance-token',
+    title: 'Member Balance Lookup',
+    eventDate: '2026-12-17',
+    targetGroup: 'ALL',
+    memberAmount: 500,
+    leaderAmount: 900
+  });
+
+  const lookup = ctx.getEventMemberBalance({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    targetEmail: 'leader@example.com'
+  });
+  equal(lookup.member.category, 'LEADER');
+  equal(lookup.balance.requiredAmount, 900);
+  equal(lookup.balance.availableAmount, 900);
+
+  const twoRecipients = ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    members: [
+      { email: 'leader@example.com', amount: 300 },
+      { email: 'member2@example.com', amount: 200 }
+    ],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-03',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  });
+  equal(twoRecipients.totalAmount, 500);
+  equal(workbook.getSheetByName('PaymentAllocations').getLastRow(), 3);
+
+  throws(() => ctx.submitContributionPayment({
+    sessionToken: 'member-token',
+    eventId: event.eventId,
+    members: [
+      { email: 'leader@example.com', amount: 100 },
+      { email: 'member2@example.com', amount: 100 },
+      { email: 'member@example.com', amount: 100 },
+      { email: 'other@example.com', amount: 100 }
+    ],
+    confirmed: true,
+    paymentMethod: 'CASH',
+    paymentDate: '2026-12-04',
+    cashReceiverName: 'Finance Officer',
+    cashReceiverPosition: 'Treasurer'
+  }), /one or two other registered members/);
 });
 
 test('Event Contributions: Fee change preserves history and logs to EventAudits', () => {

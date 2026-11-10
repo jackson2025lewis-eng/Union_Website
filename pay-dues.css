@@ -1047,3 +1047,34 @@
   gap: 8px;
   margin-top: 12px;
 }
+
+.dues-event-member-balance {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.dues-event-member-balance strong {
+  color: var(--text-main);
+}
+
+.dues-event-card-footer {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: auto;
+}
+
+@media (max-width: 520px) {
+  .dues-event-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

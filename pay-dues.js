@@ -62,7 +62,9 @@
     memberSessionToken: sessionStorage.getItem('lsuDueMemberSessionToken') || null,
     payer: null, // { email, name, membershipId, position, category }
     paymentChoice: 'PAY_MY_DUES', // 'PAY_MY_DUES' | 'PAY_FOR_OTHER_MEMBERS' | 'EVENT_CONTRIBUTION'
+    activeEventPaymentRequestId: null,
     currentEvent: null, // active event for contribution
+    eventPaymentMode: 'BALANCE',
     eventOtherMembers: [null, null], // verified other members for event
     otherMemberCount: 1,
     verifiedMembers: [], // [ { email, name, membershipId, amount } ]
@@ -370,33 +372,59 @@
               const feeRow = document.createElement('div');
               feeRow.className = 'dues-event-fees';
               const reqAmount = Number(evt.requiredAmount) || 0;
-              feeRow.innerHTML = `<div><div class="fee-label">Your Contribution Rate</div><div class="fee-amount">₹${reqAmount.toFixed(2)}</div></div>`;
+              feeRow.innerHTML = `<div><div class="fee-label">Event Contribution Total</div><div class="fee-amount">₹${reqAmount.toFixed(2)}</div></div>`;
+
+              const balanceRow = document.createElement('div');
+              balanceRow.className = 'dues-event-member-balance';
+              balanceRow.innerHTML = `
+                <span>Approved: <strong>₹${(Number(evt.myApprovedAmount) || 0).toFixed(2)}</strong></span>
+                <span>Pending: <strong>₹${(Number(evt.myPendingAmount) || 0).toFixed(2)}</strong></span>
+                <span>Balance: <strong>₹${(Number(evt.myRemainingBalance) || 0).toFixed(2)}</strong></span>
+              `;
 
               const footer = document.createElement('div');
               footer.className = 'dues-event-card-footer';
+              const actions = document.createElement('div');
+              actions.className = 'dues-event-actions';
 
-              if (evt.myPaymentStatus === 'PAID / VERIFIED') {
-                footer.innerHTML = '<span class="dues-badge dues-badge-active" style="background: #dcfce7; color: #15803d; padding: 8px 12px; font-weight: 600;"><i class="fa-solid fa-circle-check"></i> Paid (Approved)</span>';
-              } else if (evt.myPaymentStatus === 'PENDING VERIFICATION') {
-                footer.innerHTML = '<span class="dues-badge" style="background: #fef3c7; color: #b45309; padding: 8px 12px; font-weight: 600;"><i class="fa-solid fa-clock"></i> Payment Pending Approval</span>';
-              } else if (!evt.isEligible) {
-                footer.innerHTML = '<span class="dues-badge dues-badge-closed">Not eligible for this target group</span>';
-              } else if (evt.status !== 'ACTIVE') {
-                footer.innerHTML = '<span class="dues-badge dues-badge-closed">Contributions closed</span>';
-              } else {
-                const contributeBtn = document.createElement('button');
-                contributeBtn.type = 'button';
-                contributeBtn.className = 'dues-btn-primary';
-                contributeBtn.style.padding = '8px 16px';
-                contributeBtn.style.fontSize = '0.9rem';
-                contributeBtn.innerHTML = '<i class="fa-solid fa-hand-holding-dollar"></i> Contribute Now';
-                contributeBtn.addEventListener('click', () => {
-                  setupEventPayment(evt);
-                });
-                footer.appendChild(contributeBtn);
+              if (evt.myRemainingBalance <= 0) {
+                const paid = document.createElement('span');
+                paid.className = 'dues-badge dues-badge-active';
+                paid.textContent = 'Fully paid (approved)';
+                footer.appendChild(paid);
+              } else if (evt.myPendingAmount > 0) {
+                const pending = document.createElement('span');
+                pending.className = 'dues-badge dues-badge-target';
+                pending.textContent = `₹${Number(evt.myPendingAmount).toFixed(2)} pending approval`;
+                footer.appendChild(pending);
               }
 
-              card.append(header, desc, dateRow, feeRow, footer);
+              if (evt.status === 'ACTIVE') {
+                if (evt.isEligible && Number(evt.myAvailableAmount) > 0) {
+                  const balanceBtn = document.createElement('button');
+                  balanceBtn.type = 'button';
+                  balanceBtn.className = 'dues-btn-primary';
+                  balanceBtn.style.padding = '8px 16px';
+                  balanceBtn.textContent = 'Pay Balance';
+                  balanceBtn.addEventListener('click', () => setupEventPayment(evt, 'BALANCE'));
+                  actions.appendChild(balanceBtn);
+                }
+
+                const othersBtn = document.createElement('button');
+                othersBtn.type = 'button';
+                othersBtn.className = 'dues-btn-secondary';
+                othersBtn.style.padding = '8px 16px';
+                othersBtn.textContent = 'Pay for Others';
+                othersBtn.addEventListener('click', () => setupEventPayment(evt, 'OTHERS'));
+                actions.appendChild(othersBtn);
+              } else {
+                const closed = document.createElement('span');
+                closed.className = 'dues-badge dues-badge-closed';
+                closed.textContent = 'Contributions closed';
+                footer.appendChild(closed);
+              }
+
+              card.append(header, actions, desc, dateRow, feeRow, balanceRow, footer);
               listEl.appendChild(card);
             });
           }
@@ -415,8 +443,10 @@
       }
     }
 
-    function setupEventPayment(evt) {
+    function setupEventPayment(evt, mode = 'BALANCE') {
       state.currentEvent = evt;
+      state.eventPaymentMode = mode;
+      state.activeEventPaymentRequestId = null;
       state.eventOtherMembers = [null, null];
 
       const nameEl = document.getElementById('event-setup-event-name');
@@ -428,21 +458,48 @@
       if (dateEl) dateEl.innerHTML = `<i class="fa-regular fa-calendar"></i> Event Date: <strong>${evt.eventDate}</strong>`;
       if (badgeEl) badgeEl.textContent = `Target: ${evt.targetGroup}`;
 
-      const selfFee = Number(evt.requiredAmount) || 0;
-      if (feeLabel) feeLabel.textContent = `Required contribution: ₹${selfFee.toFixed(2)}`;
+      const available = Number(evt.myAvailableAmount) || 0;
+      const remaining = Number(evt.myRemainingBalance) || 0;
+      const approved = Number(evt.myApprovedAmount) || 0;
+      const pending = Number(evt.myPendingAmount) || 0;
+      if (feeLabel) feeLabel.textContent = `Available to pay now: ₹${available.toFixed(2)}`;
+      const balanceValues = document.getElementById('event-self-balance-values');
+      if (balanceValues) {
+        balanceValues.textContent = `Event amount: ₹${(Number(evt.requiredAmount) || 0).toFixed(2)} | Approved: ₹${approved.toFixed(2)} | Pending: ₹${pending.toFixed(2)} | Remaining: ₹${remaining.toFixed(2)} | Available now: ₹${available.toFixed(2)}`;
+      }
+      const selfAmount = document.getElementById('event-self-amount');
+      if (selfAmount) {
+        selfAmount.value = '';
+        selfAmount.max = available.toFixed(2);
+      }
+      const selfHint = document.getElementById('event-self-amount-hint');
+      if (selfHint) selfHint.textContent = `Enter any amount up to ₹${available.toFixed(2)}. Pending installments reserve balance until they are approved or rejected.`;
 
       const radioSelf = document.getElementById('event-pay-self-only');
-      if (radioSelf) radioSelf.checked = true;
+      const radioOthers = document.getElementById('event-pay-multi');
+      const startWithOthers = mode === 'OTHERS';
+      if (radioSelf) radioSelf.checked = !startWithOthers;
+      if (radioOthers) radioOthers.checked = startWithOthers;
 
       const multiContainer = document.getElementById('event-multi-members-container');
-      if (multiContainer) multiContainer.style.display = 'none';
+      if (multiContainer) multiContainer.style.display = startWithOthers ? 'block' : 'none';
+      const selfAmountContainer = document.getElementById('event-self-amount-container');
+      if (selfAmountContainer) selfAmountContainer.style.display = startWithOthers ? 'none' : 'block';
 
       const email1Input = document.getElementById('event-other-email-1');
       const email2Input = document.getElementById('event-other-email-2');
+      const amount1Input = document.getElementById('event-other-amount-1');
+      const amount2Input = document.getElementById('event-other-amount-2');
+      const amount1Container = document.getElementById('event-other-amount-container-1');
+      const amount2Container = document.getElementById('event-other-amount-container-2');
       const res1 = document.getElementById('event-other-result-1');
       const res2 = document.getElementById('event-other-result-2');
       if (email1Input) email1Input.value = '';
       if (email2Input) email2Input.value = '';
+      if (amount1Input) amount1Input.value = '';
+      if (amount2Input) amount2Input.value = '';
+      if (amount1Container) amount1Container.style.display = 'none';
+      if (amount2Container) amount2Container.style.display = 'none';
       if (res1) { res1.textContent = ''; res1.style.display = 'none'; }
       if (res2) { res2.textContent = ''; res2.style.display = 'none'; }
 
@@ -455,25 +512,28 @@
       if (!state.currentEvent) return;
 
       const isMulti = document.getElementById('event-pay-multi')?.checked;
-      const selfFee = Number(state.currentEvent.requiredAmount) || 0;
-
-      let total = selfFee;
-      let count = 1;
+      let total = 0;
+      let count = 0;
 
       if (isMulti) {
         state.eventOtherMembers.forEach((m) => {
-          if (m && m.amount) {
+          if (m && m.amount > 0) {
             total += Number(m.amount) || 0;
             count++;
           }
         });
+      } else {
+        total = Number(document.getElementById('event-self-amount')?.value) || 0;
+        count = total > 0 ? 1 : 0;
       }
 
       const countDisplay = document.getElementById('event-total-members-count');
       const amountDisplay = document.getElementById('event-total-amount-display');
 
       if (countDisplay) {
-        countDisplay.textContent = count === 1 ? 'Covering 1 member (You)' : `Covering ${count} members`;
+        countDisplay.textContent = isMulti
+          ? `Paying for ${count} of up to 2 other members`
+          : count ? 'Paying toward your own event balance' : 'Enter an installment amount';
       }
       if (amountDisplay) {
         amountDisplay.textContent = `₹${total.toFixed(2)}`;
@@ -485,16 +545,26 @@
       radio.addEventListener('change', () => {
         const isMulti = document.getElementById('event-pay-multi')?.checked;
         const multiContainer = document.getElementById('event-multi-members-container');
+        const selfAmountContainer = document.getElementById('event-self-amount-container');
         if (multiContainer) multiContainer.style.display = isMulti ? 'block' : 'none';
+        if (selfAmountContainer) selfAmountContainer.style.display = isMulti ? 'none' : 'block';
         updateEventPaymentTotals();
       });
     });
+
+    document.getElementById('event-self-amount')?.addEventListener('input', updateEventPaymentTotals);
 
     // Verification handlers for additional members in event
     async function verifyEventAdditionalMember(index) {
       const emailInput = document.getElementById(`event-other-email-${index}`);
       const resultDiv = document.getElementById(`event-other-result-${index}`);
       const verifyBtn = document.getElementById(`btn-verify-event-member-${index}`);
+      const amountInput = document.getElementById(`event-other-amount-${index}`);
+      const amountContainer = document.getElementById(`event-other-amount-container-${index}`);
+      state.eventOtherMembers[index - 1] = null;
+      if (amountInput) amountInput.value = '';
+      if (amountContainer) amountContainer.style.display = 'none';
+      updateEventPaymentTotals();
 
       const rawEmail = emailInput ? emailInput.value : '';
       const email = extractEmail(rawEmail);
@@ -535,9 +605,10 @@
 
       try {
         const res = await sendBackendRequest({
-          action: 'getDuePaymentData',
+          action: 'getEventMemberBalance',
           sessionToken: state.memberSessionToken,
-          email: email
+          eventId: state.currentEvent.eventId,
+          targetEmail: email
         });
 
         if (verifyBtn) {
@@ -545,57 +616,43 @@
           verifyBtn.textContent = 'Verify';
         }
 
-        if (res && res.success && res.member) {
+        if (res && res.success && res.member && res.balance) {
           const member = res.member;
-          const pos = String(member.position || '').trim();
-          const isLeader = pos !== 'Member';
-          const category = isLeader ? 'LEADER' : 'MEMBER';
-
-          const target = (state.currentEvent.targetGroup || 'ALL').toUpperCase();
-          if (target === 'LEADERS' && !isLeader) {
-            if (resultDiv) {
-              resultDiv.style.display = 'block';
-              resultDiv.style.color = 'var(--error-color)';
-              resultDiv.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> This event is restricted to Leaders. ${member.name} is registered as "${pos || 'Member'}".`;
-            }
-            state.eventOtherMembers[index - 1] = null;
-            updateEventPaymentTotals();
-            return;
-          }
-          if (target === 'MEMBERS' && isLeader) {
-            if (resultDiv) {
-              resultDiv.style.display = 'block';
-              resultDiv.style.color = 'var(--error-color)';
-              resultDiv.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> This event is restricted to regular Members. ${member.name} is registered as "${pos}".`;
-            }
-            state.eventOtherMembers[index - 1] = null;
-            updateEventPaymentTotals();
-            return;
-          }
-
-          const fee = isLeader ? (Number(state.currentEvent.leaderAmount) || Number(state.currentEvent.memberAmount) || 0) : (Number(state.currentEvent.memberAmount) || 0);
-
           state.eventOtherMembers[index - 1] = {
             email: member.email,
             name: member.name,
             membershipId: member.membershipId || '',
-            position: pos,
-            category: category,
-            amount: fee
+            position: member.position,
+            category: member.category,
+            amount: 0,
+            balance: res.balance
           };
 
+          const balanceHint = document.getElementById(`event-other-balance-hint-${index}`);
+          if (amountInput) {
+            amountInput.value = '';
+            amountInput.max = Number(res.balance.availableAmount).toFixed(2);
+          }
+          if (amountContainer) amountContainer.style.display = res.balance.availableAmount > 0 ? 'block' : 'none';
+          if (balanceHint) {
+            balanceHint.textContent = `Event amount ₹${Number(res.balance.requiredAmount).toFixed(2)}; approved ₹${Number(res.balance.approvedAmount).toFixed(2)}; pending ₹${Number(res.balance.pendingAmount).toFixed(2)}; available now ₹${Number(res.balance.availableAmount).toFixed(2)}.`;
+          }
           if (resultDiv) {
             resultDiv.style.display = 'block';
-            resultDiv.style.color = '#15803d';
-            resultDiv.innerHTML = `<i class="fa-solid fa-circle-check"></i> <strong>${member.name}</strong> (${pos || 'Member'}) — Required Fee: <strong>₹${fee.toFixed(2)}</strong>`;
+            resultDiv.style.color = res.balance.availableAmount > 0 ? '#15803d' : 'var(--error-color)';
+            resultDiv.textContent = res.balance.availableAmount > 0
+              ? `${member.name} (${member.position}) is verified. Balance remaining: ₹${Number(res.balance.remainingBalance).toFixed(2)}.`
+              : `${member.name} has no available balance to pay for this event.`;
           }
           updateEventPaymentTotals();
         } else {
           state.eventOtherMembers[index - 1] = null;
+          const amountContainer = document.getElementById(`event-other-amount-container-${index}`);
+          if (amountContainer) amountContainer.style.display = 'none';
           if (resultDiv) {
             resultDiv.style.display = 'block';
             resultDiv.style.color = 'var(--error-color)';
-            resultDiv.innerHTML = `<i class="fa-solid fa-circle-exclamation"></i> ${res.message || 'Member not found in verified registry.'}`;
+            resultDiv.textContent = res.message || 'Member not found in verified registry.';
           }
           updateEventPaymentTotals();
         }
@@ -618,6 +675,21 @@
     const btnVerifyEvt2 = document.getElementById('btn-verify-event-member-2');
     if (btnVerifyEvt1) btnVerifyEvt1.addEventListener('click', () => verifyEventAdditionalMember(1));
     if (btnVerifyEvt2) btnVerifyEvt2.addEventListener('click', () => verifyEventAdditionalMember(2));
+    [1, 2].forEach(index => {
+      document.getElementById(`event-other-email-${index}`)?.addEventListener('input', () => {
+        state.eventOtherMembers[index - 1] = null;
+        const amountInput = document.getElementById(`event-other-amount-${index}`);
+        const amountContainer = document.getElementById(`event-other-amount-container-${index}`);
+        const resultDiv = document.getElementById(`event-other-result-${index}`);
+        if (amountInput) amountInput.value = '';
+        if (amountContainer) amountContainer.style.display = 'none';
+        if (resultDiv) {
+          resultDiv.textContent = '';
+          resultDiv.style.display = 'none';
+        }
+        updateEventPaymentTotals();
+      });
+    });
 
     const btnProceedEventPayment = document.getElementById('btn-event-proceed-payment');
     if (btnProceedEventPayment) {
@@ -629,18 +701,26 @@
         }
 
         const isMulti = document.getElementById('event-pay-multi')?.checked;
-        const selfFee = Number(state.currentEvent.requiredAmount) || 0;
+        const list = [];
 
-        const list = [
-          {
+        if (!isMulti) {
+          const amount = Number(document.getElementById('event-self-amount')?.value);
+          const available = Number(state.currentEvent.myAvailableAmount) || 0;
+          if (!Number.isFinite(amount) || amount <= 0) {
+            showError('event-setup-error', 'Enter a contribution amount greater than zero.');
+            return;
+          }
+          if (amount > available) {
+            showError('event-setup-error', `Your remaining balance is ₹${Number(state.currentEvent.myRemainingBalance || 0).toFixed(2)}; ₹${Number(state.currentEvent.myPendingAmount || 0).toFixed(2)} is pending approval. The exact maximum you can submit now is ₹${available.toFixed(2)}.`);
+            return;
+          }
+          list.push({
             email: state.payer.email,
             name: state.payer.name,
             membershipId: state.payer.membershipId || '',
-            amount: selfFee
-          }
-        ];
-
-        if (isMulti) {
+            amount
+          });
+        } else {
           const email1 = extractEmail(document.getElementById('event-other-email-1')?.value);
           const email2 = extractEmail(document.getElementById('event-other-email-2')?.value);
 
@@ -652,14 +732,30 @@
             showError('event-setup-error', 'Please verify Member 2 or clear the email field before proceeding.');
             return;
           }
-          if (!email1 && !email2) {
-            showError('event-setup-error', 'Please enter and verify at least one additional member, or choose "Contribute for myself only".');
+          if (!email1) {
+            showError('event-setup-error', 'Enter the registered email address for at least one member. You may add one or two members.');
             return;
           }
 
-          state.eventOtherMembers.forEach(m => {
-            if (m) list.push(m);
-          });
+          const emails = [email1, email2].filter(Boolean);
+          for (let index = 0; index < emails.length; index++) {
+            const member = state.eventOtherMembers[index];
+            const inputAmount = Number(document.getElementById(`event-other-amount-${index + 1}`)?.value);
+            if (!member || extractEmail(member.email) !== emails[index]) {
+              showError('event-setup-error', `Verify the registered email for Member ${index + 1} before continuing.`);
+              return;
+            }
+            if (!Number.isFinite(inputAmount) || inputAmount <= 0) {
+              showError('event-setup-error', `Enter a contribution amount greater than zero for ${member.name}.`);
+              return;
+            }
+            const available = Number(member.balance.availableAmount) || 0;
+            if (inputAmount > available) {
+              showError('event-setup-error', `${member.name}'s approved-payment balance is ₹${Number(member.balance.remainingBalance).toFixed(2)}; ₹${Number(member.balance.pendingAmount).toFixed(2)} is pending. The exact maximum you can submit now is ₹${available.toFixed(2)}.`);
+              return;
+            }
+            list.push({ ...member, amount: inputAmount });
+          }
         }
 
         state.paymentChoice = 'EVENT_CONTRIBUTION';
@@ -981,10 +1077,12 @@
 
       let payload;
       if (state.paymentChoice === 'EVENT_CONTRIBUTION') {
+        state.activeEventPaymentRequestId = state.activeEventPaymentRequestId ||
+          `REQ-EVT-${window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
         payload = {
           action: 'submitContributionPayment',
           sessionToken: state.memberSessionToken,
-          requestId: 'REQ-EVT-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
+          requestId: state.activeEventPaymentRequestId,
           eventId: state.currentEvent ? state.currentEvent.eventId : '',
           members: membersPayload,
           totalAmount: totalAmount,
@@ -1066,15 +1164,26 @@
 
       if (result && result.success) {
         document.getElementById('success-payment-id').textContent = result.paymentId || 'PAY-2026-PENDING';
-        document.getElementById('success-total-amount').textContent = `₹${totalAmount.toFixed(2)}`;
+        document.getElementById('success-total-amount').textContent = `₹${Number(result.totalAmount || totalAmount).toFixed(2)}`;
+        const returnToEvents = document.getElementById('btn-return-event-contributions');
+        if (returnToEvents) returnToEvents.style.display = state.paymentChoice === 'EVENT_CONTRIBUTION' ? 'block' : 'none';
+        if (state.paymentChoice === 'EVENT_CONTRIBUTION') state.activeEventPaymentRequestId = null;
         showView('view-dues-success');
       } else {
-        showError(errorElId, result.message || 'Payment submission failed. Please try again.');
+        if (state.paymentChoice === 'EVENT_CONTRIBUTION' && result && result.success === false) {
+          state.activeEventPaymentRequestId = null;
+        }
+        showError(errorElId, (result && result.message) || 'Payment submission failed. Please retry using the same payment details.');
       }
     }
 
     if (btnSubmitOnline) btnSubmitOnline.addEventListener('click', () => handlePaymentSubmission('ONLINE / UPI'));
     if (btnSubmitCash) btnSubmitCash.addEventListener('click', () => handlePaymentSubmission('CASH'));
+
+    document.getElementById('btn-return-event-contributions')?.addEventListener('click', () => {
+      showView('view-event-contributions');
+      loadMemberEvents();
+    });
 
     // Reset flow button
     document.getElementById('btn-dues-reset-flow')?.addEventListener('click', () => {
@@ -1432,6 +1541,15 @@
         }
       }
     }
+
+    [1, 2].forEach(index => {
+      document.getElementById(`event-other-amount-${index}`)?.addEventListener('input', event => {
+        if (state.eventOtherMembers[index - 1]) {
+          state.eventOtherMembers[index - 1].amount = Number(event.target.value) || 0;
+        }
+        updateEventPaymentTotals();
+      });
+    });
 
     // Create Event Modal
     const createEventModal = document.getElementById('duesCreateEventModal');
