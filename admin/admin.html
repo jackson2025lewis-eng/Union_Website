@@ -210,26 +210,50 @@
     <div id="modal-request-update" class="admin-modal-overlay">
         <div class="admin-modal">
             <div class="modal-header">
-                <h3>Request Document Update</h3>
+                <h3>Request Document Correction</h3>
                 <button class="close-modal">&times;</button>
             </div>
             <div class="modal-body">
-                <p>Which document needs to be updated by the applicant?</p>
                 <div class="form-group">
-                    <select id="update-doc-type" class="admin-select">
-                        <option value="EFRO File">EFRO File</option>
-                        <option value="Passport Document">Passport Document</option>
-                        <option value="Identification Photo">Identification Photo</option>
+                    <label for="update-doc-mode">Correction type</label>
+                    <select id="update-doc-mode" class="admin-select">
+                        <option value="single">Single Document</option>
+                        <option value="multiple">Multiple Documents</option>
                     </select>
                 </div>
-                <div class="form-group">
-                    <label>Reason / Instructions</label>
-                    <textarea id="update-doc-reason" class="admin-input" rows="3" placeholder="e.g. Document is blurry..."></textarea>
-                </div>
+                <div id="update-doc-options"></div>
             </div>
             <div class="modal-footer">
                 <button class="secondary-btn close-modal-btn">Cancel</button>
                 <button id="btn-submit-update-request" class="primary-btn">Send Request</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="modal-request-information-update" class="admin-modal-overlay">
+        <div class="admin-modal">
+            <div class="modal-header">
+                <h3>Request Membership Information Update</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="update-info-mode">Update scope</label>
+                    <select id="update-info-mode" class="admin-select">
+                        <option value="selected">Selected Fields Only</option>
+                        <option value="full">Refill Entire Membership Form</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="update-info-overall-reason">Overall reason (optional for selected fields)</label>
+                    <textarea id="update-info-overall-reason" class="admin-input" rows="3" maxlength="1000"></textarea>
+                </div>
+                <p id="update-info-document-note">Documents are handled separately and will remain unchanged.</p>
+                <div id="update-info-options"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="secondary-btn close-modal-btn">Cancel</button>
+                <button id="btn-submit-information-update" class="primary-btn">Send Secure Link</button>
             </div>
         </div>
     </div>

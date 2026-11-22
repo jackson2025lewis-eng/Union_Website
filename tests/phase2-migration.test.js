@@ -411,6 +411,11 @@ for (const rows of [
     set('Last Name', 'Applicant');
     set('Application ID', id);
     set('Application Status', 'UNDER_REVIEW');
+    if (membershipType === 'CURRENT STUDENT') {
+      set('Passport Document', 'https://drive.google.com/file/d/original-passport');
+      set('Identification Photo', 'https://drive.google.com/file/d/original-photo');
+      set('EFRO File', 'https://drive.google.com/file/d/original-efro');
+    }
     sheet.appendRow(row);
     return row;
   };
@@ -449,6 +454,202 @@ for (const rows of [
   equal(sheet.rows[1][sheet.rows[0].indexOf('Application Status')], 'UNDER_REVIEW');
   ok(String(sheet.rows[1][sheet.rows[0].indexOf('Passport Document')]).startsWith('https://drive.google.com/'));
   equal(f.props.getProperty('DOC_UPDATE_' + uploadToken), null);
+
+  const originalEfro = sheet.rows[1][sheet.rows[0].indexOf('EFRO File')];
+  const originalPhoto = sheet.rows[1][sheet.rows[0].indexOf('Identification Photo')];
+  const multiRequest = JSON.parse(f.context.doPost({
+    postData: { contents: JSON.stringify({
+      action: 'updateApplicationStatus', sessionToken: 'membership-token',
+      applicationId: 'APP-STUDENT', newStatus: 'NEEDS_CLARIFICATION',
+      updateDocuments: [
+        { docType: 'Passport Document', reason: 'Upload a clear scan.' },
+        { docType: 'Identification Photo', reason: 'Use a recent JPG photo.' }
+      ]
+    }) }
+  }).content);
+  equal(multiRequest.success, true);
+  const documentTokenKey = Object.keys(f.props.getProperties()).find(key => {
+    if (!key.startsWith('DOC_UPDATE_')) return false;
+    try {
+      const data = JSON.parse(f.props.getProperty(key));
+      return data.appId === 'APP-STUDENT' && Array.isArray(data.documents) && data.documents.length === 2;
+    } catch (error) { return false; }
+  });
+  ok(Boolean(documentTokenKey));
+  const documentToken = documentTokenKey.replace('DOC_UPDATE_', '');
+  const documentInfo = f.context.getDocumentUpdateInfo(documentToken);
+  equal(documentInfo.documents.length, 2);
+  equal(documentInfo.documents[0].reason, 'Upload a clear scan.');
+  throws(() => f.context.submitDocumentUpdate({
+    token: documentToken,
+    files: {
+      'Passport Document': { name: 'passport.pdf', type: 'application/pdf', content: Buffer.from('new passport').toString('base64') },
+      'Unrequested Document': { name: 'other.pdf', type: 'application/pdf', content: Buffer.from('other').toString('base64') }
+    }
+  }), /not requested/);
+  const multiUpload = f.context.submitDocumentUpdate({
+    token: documentToken,
+    files: {
+      'Passport Document': { name: 'passport-new.pdf', type: 'application/pdf', content: Buffer.from('new passport').toString('base64') },
+      'Identification Photo': { name: 'photo-new.jpg', type: 'image/jpeg', content: Buffer.from('new photo').toString('base64') }
+    }
+  });
+  equal(multiUpload.success, true);
+  equal(sheet.rows[1][sheet.rows[0].indexOf('Application Status')], 'UNDER_REVIEW');
+  ok(sheet.rows[1][sheet.rows[0].indexOf('Passport Document')] !== 'https://drive.google.com/file/d/original-passport');
+  ok(sheet.rows[1][sheet.rows[0].indexOf('Identification Photo')] !== originalPhoto);
+  equal(sheet.rows[1][sheet.rows[0].indexOf('EFRO File')], originalEfro);
+}
+
+// Requested member fields are exposed only in the token scope and are applied only after approval.
+{
+  const member = ['member@example.com', 'Member', 'MEMBERSHIP_CO_ADMINISTRATOR', 'ACTIVE', new Date(), 'SYSTEM', '', '', 'No', 0];
+  const f = fixture([member]);
+  const now = f.now();
+  f.cache.put('LSU_ADMIN_SESSION_membership-token', JSON.stringify({
+    email: member[0], role: member[2], issuedAt: now, createdAt: now
+  }), 900);
+  const sheet = f.context.ensureMembersSheet();
+  const row = Array(37).fill('');
+  const put = (name, value) => { row[sheet.rows[0].indexOf(name)] = value; };
+  put('Email', 'applicant@example.com');
+  put('Application ID', 'APP-INFO-001');
+  put('Application Status', 'UNDER_REVIEW');
+  put('Membership Type', 'CURRENT STUDENT');
+  put('First Name', 'Applicant');
+  put('Mobile Number', '+919876543210');
+  sheet.appendRow(row);
+
+  equal(f.context.requestMembershipInformationUpdate({
+    sessionToken: 'membership-token',
+    applicationId: 'APP-INFO-001',
+    mode: 'selected',
+    fields: [{ key: 'mobileNumber', reason: 'Please provide your current phone number.' }]
+  }).success, true);
+  const link = f.sentEmails[f.sentEmails.length - 1].body.match(/token=([^\s]+)/);
+  ok(Boolean(link));
+  const updateToken = link[1];
+  const info = f.context.getMembershipInformationUpdateInfo(updateToken);
+  equal(info.fields.length, 1);
+  equal(info.fields[0].key, 'mobileNumber');
+  equal(Object.prototype.hasOwnProperty.call(info, 'email'), false);
+  equal(Object.prototype.hasOwnProperty.call(info, 'values'), false);
+  throws(() => f.context.submitMembershipInformationUpdate({
+    token: updateToken,
+    values: { mobileNumber: '+919999999999', firstName: 'Unauthorized change' }
+  }), /only the information fields requested/);
+  equal(f.context.submitMembershipInformationUpdate({
+    token: updateToken,
+    values: { mobileNumber: '+919999999999' }
+  }).success, true);
+  const mobileColumn = sheet.rows[0].indexOf('Mobile Number');
+  equal(sheet.rows[1][mobileColumn], '+919876543210');
+
+  const dashboard = f.context.getDashboardData('membership-token');
+  const updateId = dashboard.applications[0].pendingInformationUpdate.id;
+  equal(dashboard.applications[0].pendingInformationUpdate.values.mobileNumber, '+919999999999');
+  equal(f.context.reviewMembershipInformationUpdate({
+    sessionToken: 'membership-token',
+    updateId,
+    decision: 'APPROVE'
+  }).success, true);
+  equal(sheet.rows[1][mobileColumn], '+919999999999');
+  const review = JSON.parse(f.props.getProperty('MEMBER_INFO_UPDATE_REVIEW_' + updateId));
+  equal(review.status, 'APPROVED');
+  equal(review.previousValues.mobileNumber, '+919876543210');
+}
+
+// Full-form refill includes all applicable information fields, excludes documents, and waits for review.
+{
+  const member = ['member@example.com', 'Member', 'MEMBERSHIP_CO_ADMINISTRATOR', 'ACTIVE', new Date(), 'SYSTEM', '', '', 'No', 0];
+  const f = fixture([member]);
+  const now = f.now();
+  f.cache.put('LSU_ADMIN_SESSION_membership-token', JSON.stringify({
+    email: member[0], role: member[2], issuedAt: now, createdAt: now
+  }), 900);
+  const sheet = f.context.ensureMembersSheet();
+  const row = Array(37).fill('');
+  const put = (name, value) => { row[sheet.rows[0].indexOf(name)] = value; };
+  put('Email', 'alumni@example.com');
+  put('Application ID', 'APP-INFO-002');
+  put('Application Status', 'MEMBER_CONFIRMED');
+  put('Membership Type', 'ALUMNI');
+  put('First Name', 'Old Name');
+  put('Passport Document', 'https://drive.google.com/file/d/original-alumni-passport');
+  put('Identification Photo', 'https://drive.google.com/file/d/original-alumni-photo');
+  sheet.appendRow(row);
+
+  equal(f.context.requestMembershipInformationUpdate({
+    sessionToken: 'membership-token',
+    applicationId: 'APP-INFO-002',
+    mode: 'full',
+    reason: 'Please refresh all membership information.'
+  }).success, true);
+  const link = f.sentEmails[f.sentEmails.length - 1].body.match(/token=([^\s]+)/);
+  ok(Boolean(link));
+  const info = f.context.getMembershipInformationUpdateInfo(link[1]);
+  ok(info.fields.length > 10);
+  equal(info.fields.some(field => field.key === 'Email'), false);
+  equal(info.fields.some(field => field.key === 'passportDocument'), false);
+  equal(info.fields.some(field => field.key === 'graduationDate'), true);
+
+  const values = {};
+  info.fields.forEach(field => {
+    if (field.type === 'select') values[field.key] = field.options[0];
+    else if (field.type === 'date') values[field.key] = '2020-01-02';
+    else if (field.type === 'year') values[field.key] = field.key === 'studyFrom' ? '2018' : '2022';
+    else if (field.key === 'mobileNumber' || field.key === 'whatsappNumber' || field.key === 'parentsContact') values[field.key] = '+919999999999';
+    else if (field.key === 'passportNumber') values[field.key] = 'B12345';
+    else if (!field.required) values[field.key] = '';
+    else values[field.key] = `Updated ${field.label}`;
+  });
+  equal(f.context.submitMembershipInformationUpdate({ token: link[1], values }).success, true);
+  equal(sheet.rows[1][sheet.rows[0].indexOf('First Name')], 'Old Name');
+  const dashboard = f.context.getDashboardData('membership-token');
+  const updateId = dashboard.applications[0].pendingInformationUpdate.id;
+  equal(f.context.reviewMembershipInformationUpdate({
+    sessionToken: 'membership-token',
+    updateId,
+    decision: 'REJECT',
+    reason: 'Please correct the information before approval.'
+  }).success, true);
+  equal(sheet.rows[1][sheet.rows[0].indexOf('First Name')], 'Old Name');
+  equal(sheet.rows[1][sheet.rows[0].indexOf('Passport Document')], 'https://drive.google.com/file/d/original-alumni-passport');
+}
+
+// Pending and rejected applications remain visible but are excluded from confirmed-member statistics.
+{
+  const member = ['member@example.com', 'Member', 'MEMBERSHIP_CO_ADMINISTRATOR', 'ACTIVE', new Date(), 'SYSTEM', '', '', 'No', 0];
+  const f = fixture([member]);
+  const now = f.now();
+  f.cache.put('LSU_ADMIN_SESSION_membership-token', JSON.stringify({
+    email: member[0], role: member[2], issuedAt: now, createdAt: now
+  }), 900);
+  const sheet = f.context.ensureMembersSheet();
+  const addApplication = (id, type, status, gender) => {
+    const row = Array(37).fill('');
+    const put = (name, value) => { row[sheet.rows[0].indexOf(name)] = value; };
+    put('Email', `${id.toLowerCase()}@example.com`);
+    put('Application ID', id);
+    put('Membership Type', type);
+    put('Application Status', status);
+    put('Gender', gender);
+    put('Degree Type', 'Bachelor');
+    sheet.appendRow(row);
+  };
+  addApplication('APP-STUDENT-CONFIRMED', 'CURRENT STUDENT', 'MEMBER_CONFIRMED', 'Female');
+  addApplication('APP-STUDENT-PENDING', 'CURRENT STUDENT', 'UNDER_REVIEW', 'Male');
+  addApplication('APP-ALUMNI-REJECTED', 'ALUMNI', 'REJECTED', 'Male');
+  addApplication('APP-ALUMNI-CONFIRMED', 'ALUMNI', 'CONFIRMED', 'Male');
+
+  const dashboard = f.context.getDashboardData('membership-token');
+  equal(dashboard.statistics.currentStudents.total, 1);
+  equal(dashboard.statistics.currentStudents.female, 1);
+  equal(dashboard.statistics.alumni.total, 1);
+  equal(dashboard.statistics.alumni.male, 1);
+  equal(dashboard.applications.length, 4);
+  equal(dashboard.applications.some(app => app['Application Status'] === 'UNDER_REVIEW'), true);
+  equal(dashboard.applications.some(app => app['Application Status'] === 'REJECTED'), true);
 }
 
 // Financial admin approval/rejection updates payment and allocation rows, logs actions, and blocks duplicate approval.

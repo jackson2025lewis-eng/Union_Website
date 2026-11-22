@@ -549,6 +549,28 @@
     gap: 10px;
 }
 
+.admin-update-option {
+    padding: 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+}
+
+.admin-update-option > label:first-child {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.admin-update-option textarea {
+    width: 100%;
+}
+
+.admin-update-field-summary {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    text-align: left;
+}
+
 /* Detail Grid */
 .detail-grid {
     display: grid;

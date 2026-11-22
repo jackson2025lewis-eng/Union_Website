@@ -752,6 +752,42 @@ test('Event Contributions: Rejected installment does not count and restores avai
   equal(balance.availableAmount, 500);
 });
 
+test('Financial calculations: A paid allocation does not count until its payment is approved', () => {
+  const { ctx, workbook } = createTestContext();
+  const event = ctx.createEvent({
+    sessionToken: 'finance-token',
+    title: 'Approval Gate',
+    eventDate: '2026-12-17',
+    targetGroup: 'MEMBERS',
+    memberAmount: 500
+  });
+  ctx.ensurePaymentSheets();
+  const payments = workbook.getSheetByName('Payments');
+  const allocations = workbook.getSheetByName('PaymentAllocations');
+  payments.appendRow([
+    'PAY-PENDING-MISMATCH', 'Payer', 'member@example.com', 'CASH', 200,
+    '2026-12-01', '', 'Treasurer', 'Officer', 'PENDING VERIFICATION',
+    new Date(), '', '', '', '', ''
+  ]);
+  allocations.appendRow([
+    'PAY-PENDING-MISMATCH', 'member@example.com', 'Member', 'LSU-2026-001',
+    200, 'PAID / VERIFIED', 'CONTRIBUTION', event.eventId
+  ]);
+
+  const eventSummary = ctx.getEvents({ memberSessionToken: 'member-token' }).events
+    .find(item => item.eventId === event.eventId);
+  equal(eventSummary.totalCollected, 0);
+  equal(eventSummary.myApprovedAmount, 0);
+  equal(eventSummary.myRemainingBalance, 500);
+  equal(eventSummary.myPendingAmount, 0);
+  const balance = ctx.getEventMemberBalance({
+    sessionToken: 'member-token',
+    eventId: event.eventId
+  }).balance;
+  equal(balance.approvedAmount, 0);
+  equal(balance.remainingBalance, 500);
+});
+
 test('Event Contributions: Pay Balance balance lookup for one or two other members', () => {
   const { ctx, workbook } = createTestContext();
   const event = ctx.createEvent({
@@ -1097,6 +1133,54 @@ test('Event Contributions: Non-destructive backward-compatibility for legacy 6-c
   equal(report.totalDuesCollected, 200);
   equal(report.totalContributionsCollected, 0);
   equal(report.totalMoneyCollected, 200);
+});
+
+test('Payment sheets: Initialize the current header schema', () => {
+  const { ctx, workbook } = createTestContext();
+  ctx.ensurePaymentSheets();
+
+  deepEqual(workbook.getSheetByName('Payments').getDataRange().getValues()[0], [
+    'Payment ID', 'Payer', 'Payer Email', 'Payment Method', 'Total Amount',
+    'Payment Date', 'UPI Ref No.', 'Cash Receiver Name', 'Cash Receiver Position',
+    'Status', 'Submitted Date', 'Approved Date', 'Approved By', 'Receipt ID',
+    'Rejection Reason', 'Request ID'
+  ]);
+  deepEqual(workbook.getSheetByName('PaymentAllocations').getDataRange().getValues()[0], [
+    'Payment ID', 'Member Email', 'Member Name', 'Membership ID',
+    'Amount', 'Receipt Status', 'Allocation Type', 'Event ID'
+  ]);
+});
+
+test('Payment sheets: Preserve records with the current header schema', () => {
+  const { ctx, workbook } = createTestContext();
+  const payments = workbook.insertSheet('Payments');
+  payments.appendRow([
+    'Payment ID', 'Payer', 'Payer Email', 'Payment Method', 'Total Amount',
+    'Payment Date', 'UPI Ref No.', 'Cash Receiver Name', 'Cash Receiver Position',
+    'Status', 'Submitted Date', 'Approved Date', 'Approved By', 'Receipt ID',
+    'Rejection Reason', 'Request ID'
+  ]);
+  payments.appendRow([
+    'PAY-PRESERVE-001', 'Existing Payer', 'existing@example.com', 'CASH', 100,
+    '2026-11-22', '', 'Treasurer', 'Financial Secretary', 'PENDING VERIFICATION',
+    new Date('2026-11-22T00:00:00Z'), '', '', '', '', 'request-existing'
+  ]);
+  const allocations = workbook.insertSheet('PaymentAllocations');
+  allocations.appendRow([
+    'Payment ID', 'Member Email', 'Member Name', 'Membership ID',
+    'Amount', 'Receipt Status', 'Allocation Type', 'Event ID'
+  ]);
+  allocations.appendRow([
+    'PAY-PRESERVE-001', 'existing@example.com', 'Existing Payer', 'LSU-001',
+    100, 'PENDING VERIFICATION', 'DUES', ''
+  ]);
+  const paymentRowsBefore = payments.getDataRange().getValues();
+  const allocationRowsBefore = allocations.getDataRange().getValues();
+
+  ctx.ensurePaymentSheets();
+
+  deepEqual(payments.getDataRange().getValues(), paymentRowsBefore);
+  deepEqual(allocations.getDataRange().getValues(), allocationRowsBefore);
 });
 
 test('Event Contributions: Appends new allocation columns after unrelated legacy columns', () => {

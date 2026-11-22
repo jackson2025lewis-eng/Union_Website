@@ -31,21 +31,16 @@
         <div id="form-view" class="view-state" style="display: none;">
             <div class="info-card">
                 <p><strong>Application ID:</strong> <span id="app-id-display">Loading...</span></p>
-                <p><strong>Requested Document:</strong> <span id="doc-type-display" class="highlight-doc">Loading...</span></p>
-                <p><strong>Reason for Update:</strong></p>
+                <p id="update-scope-label"><strong>Requested Documents:</strong></p>
                 <div class="reason-box" id="reason-display">Loading...</div>
             </div>
 
             <form id="update-form">
-                <div class="form-group">
-                    <label for="replacement-file">Upload Replacement Document <span class="required">*</span></label>
-                    <input type="file" id="replacement-file" required>
-                    <small id="file-hint">PDF or JPG only, max 5MB.</small>
-                </div>
-                
+                <div id="document-update-fields"></div>
+                <div id="membership-update-fields"></div>
                 <div id="upload-error" class="error-msg"></div>
                 <button type="submit" id="btn-submit" class="primary-btn full-width">
-                    <i class="fa-solid fa-cloud-arrow-up"></i> Upload Replacement Document
+                    <i class="fa-solid fa-cloud-arrow-up"></i> Submit Update
                 </button>
             </form>
         </div>

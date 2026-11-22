@@ -53,6 +53,37 @@ const LSU_PAYMENT_CONFIG = {
   MAX_OTHER_MEMBERS: 2
 };
 
+const LSU_PAYMENT_HEADERS_ = [
+  "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
+  "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
+  "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason",
+  "Request ID"
+];
+
+const LSU_MEMBERSHIP_UPDATE_TOKEN_PREFIX_ = "MEMBER_INFO_UPDATE_TOKEN_";
+const LSU_MEMBERSHIP_UPDATE_REVIEW_PREFIX_ = "MEMBER_INFO_UPDATE_REVIEW_";
+const LSU_MEMBERSHIP_UPDATE_FIELD_DEFS_ = [
+  { key: "firstName", label: "First Name", column: "First Name", type: "text", required: true },
+  { key: "middleName", label: "Middle Name", column: "Middle Name", type: "text", required: false },
+  { key: "lastName", label: "Last Name", column: "Last Name", type: "text", required: true },
+  { key: "gender", label: "Gender", column: "Gender", type: "select", options: ["Male", "Female"], required: true },
+  { key: "dateOfBirth", label: "Date of Birth", column: "Date of Birth", type: "date", required: true },
+  { key: "positionRole", label: "Position / Role", column: "Position / Role", type: "select", options: ["Member", "President", "Vice-President", "Secretary General", "Financial Secretary", "Chaplain"], required: true },
+  { key: "whatsappNumber", label: "WhatsApp Number", column: "WhatsApp Number", type: "tel", required: true },
+  { key: "mobileNumber", label: "Mobile Number", column: "Mobile Number", type: "tel", required: true },
+  { key: "passportNumber", label: "Passport Number", column: "Passport Number", type: "text", required: true },
+  { key: "collegeRegistrationNumber", label: "College Registration Number", column: "College Registration Number", type: "text", required: true, studentOnly: true },
+  { key: "university", label: "University", column: "University", type: "select", options: ["SOA University", "KIIT University", "C V Raman University"], required: true },
+  { key: "degreeType", label: "Degree Type", column: "Degree Type", type: "select", options: ["Bachelor", "Master", "PHD"], required: true },
+  { key: "studyFrom", label: "Study From", column: "Study From", type: "year", required: true },
+  { key: "studyTo", label: "Study To", column: "Study To", type: "year", required: true },
+  { key: "fieldOfStudies", label: "Field of Studies", column: "Field of Studies", type: "text", required: true },
+  { key: "motherName", label: "Mother's Name", column: "Mother Name", type: "text", required: true, studentOnly: true },
+  { key: "fatherName", label: "Father's Name", column: "Father Name", type: "text", required: true, studentOnly: true },
+  { key: "parentsContact", label: "Parents' Contact", column: "Parents Contact", type: "tel", required: true, studentOnly: true },
+  { key: "graduationDate", label: "Date of Graduation", column: "Graduation Date", type: "date", required: true, alumniOnly: true }
+];
+
 /*******************************************************
  * HELPERS & RESILIENT SHEET INITIALIZERS
  *******************************************************/
@@ -468,9 +499,14 @@ function lsuPaymentSheet_(name, headers) {
         }
       });
     } else {
-      const mismatch = headers.findIndex((header, i) =>
-        String(current[i] || "").trim().toLowerCase() !== header.toLowerCase()
-      );
+      const mismatch = headers.findIndex((header, i) => {
+        const actualHeader = String(current[i] || "").trim();
+        const optionalTrailingRequestId = name === LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME &&
+          header.toLowerCase() === "request id" &&
+          i === headers.length - 1 &&
+          i === current.length;
+        return !optionalTrailingRequestId && actualHeader.toLowerCase() !== header.toLowerCase();
+      });
       if (mismatch !== -1) {
         throw publicError_(`${name} has an unexpected schema at column ${mismatch + 1}. No existing headers or records were changed.`);
       }
@@ -560,18 +596,34 @@ function lsuRollbackPaymentSubmission_(paymentSheet, allocationSheet, paymentId,
   }
 }
 
-function lsuEventMemberBalance_(allocationRows, columns, eventId, email, requiredAmount) {
+function lsuEventPaymentStatusMap_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME);
+  const statuses = Object.create(null);
+  if (!sheet) return statuses;
+  const rows = sheet.getDataRange().getValues();
+  for (let i = 1; i < rows.length; i++) {
+    const paymentId = String(rows[i][0] || "").trim();
+    if (paymentId) statuses[paymentId] = String(rows[i][9] || "").trim().toUpperCase();
+  }
+  return statuses;
+}
+
+function lsuEventMemberBalance_(allocationRows, columns, eventId, email, requiredAmount, paymentStatuses) {
   let approvedAmount = 0;
   let pendingAmount = 0;
   for (let i = 1; i < allocationRows.length; i++) {
     const row = allocationRows[i];
+    const paymentId = String(lsuAllocationValue_(row, columns, "paymentId", "")).trim();
+    const status = String(lsuAllocationValue_(row, columns, "receiptStatus", "")).trim().toUpperCase();
     if (
       String(lsuAllocationValue_(row, columns, "allocationType", "DUES")).trim().toUpperCase() !== "CONTRIBUTION" ||
       String(lsuAllocationValue_(row, columns, "eventId", "")).trim() !== eventId ||
-      extractEmail(lsuAllocationValue_(row, columns, "memberEmail", "")) !== email
+      extractEmail(lsuAllocationValue_(row, columns, "memberEmail", "")) !== email ||
+      !paymentId ||
+      !paymentStatuses ||
+      paymentStatuses[paymentId] !== status
     ) continue;
 
-    const status = String(lsuAllocationValue_(row, columns, "receiptStatus", "")).trim().toUpperCase();
     const amount = Number(lsuAllocationValue_(row, columns, "amount", 0) || 0);
     if (status === "PAID / VERIFIED") approvedAmount += amount;
     else if (status === "PENDING VERIFICATION") pendingAmount += amount;
@@ -623,11 +675,7 @@ function lsuRequiredEventAmount_(event, member) {
 }
 
 function ensurePaymentSheets() {
-  lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, [
-    "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
-    "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
-    "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
-  ]);
+  lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, LSU_PAYMENT_HEADERS_);
   lsuPaymentSheet_(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME, [
     "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status",
     "Allocation Type","Event ID"
@@ -785,7 +833,7 @@ function cleanupExpiredTokens_() {
     const keysToDelete = [];
     
     for (const [key, val] of Object.entries(allProps)) {
-      if (key.startsWith("DOC_UPDATE_") || key.startsWith("VERIF_TOKEN_")) {
+      if (key.startsWith("DOC_UPDATE_") || key.startsWith("VERIF_TOKEN_") || key.startsWith(LSU_MEMBERSHIP_UPDATE_TOKEN_PREFIX_)) {
         try {
           const parsed = JSON.parse(val);
           if (parsed.expiresAt && new Date(parsed.expiresAt).getTime() < now) {
@@ -1128,6 +1176,45 @@ function logoutAdministrator(token) {
 /*******************************************************
  * DASHBOARD STATISTICS
  *******************************************************/
+function lsuMembershipUpdateFields_(isStudent) {
+  return LSU_MEMBERSHIP_UPDATE_FIELD_DEFS_
+    .filter(field => !(field.studentOnly && !isStudent) && !(field.alumniOnly && isStudent))
+    .map(field => ({
+      key: field.key,
+      label: field.label,
+      type: field.type,
+      required: field.required,
+      options: field.options ? field.options.slice() : undefined
+    }));
+}
+
+function lsuFindApplicationRecord_(applicationId, expectedEmail) {
+  const sheet = ensureMembersSheet();
+  const values = sheet.getDataRange().getValues();
+  const headers = values.length ? values[0].map(value => String(value || "").trim()) : [];
+  const idColumn = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
+  const emailColumn = findColumnIndex(headers, "Email", "Applicant Email", "Email Address", "Applicant's Email", "Untitled Question");
+  if (idColumn === -1 || emailColumn === -1) throw new Error("Application identity fields are unavailable.");
+
+  const appId = String(applicationId || "").trim();
+  const expected = extractEmail(expectedEmail);
+  for (let i = 1; i < values.length; i++) {
+    if (String(values[i][idColumn] || "").trim().toUpperCase() !== appId.toUpperCase()) continue;
+    const rowEmail = extractEmail(values[i][emailColumn]) || findEmailInRow(values[i], headers);
+    if (!rowEmail || (expected && rowEmail !== expected)) throw new Error("Application identity could not be verified.");
+    return { sheet, values, headers, rowIndex: i, rowNumber: i + 1, row: values[i], email: rowEmail };
+  }
+  throw new Error("Application identity could not be verified.");
+}
+
+function lsuMembershipUpdateFieldDefinition_(key, isStudent) {
+  return LSU_MEMBERSHIP_UPDATE_FIELD_DEFS_.find(field =>
+    field.key === key &&
+    !(field.studentOnly && !isStudent) &&
+    !(field.alumniOnly && isStudent)
+  ) || null;
+}
+
 function getDashboardData(sessionToken) {
   const session = requireAdministratorSession(sessionToken);
   const sheet = ensureMembersSheet();
@@ -1139,6 +1226,14 @@ function getDashboardData(sessionToken) {
     currentStudents: { total: 0, male: 0, female: 0, bachelorCandidate: 0, masters: 0, phd: 0, universities: {} },
     alumni: { total: 0, male: 0, female: 0, bachelor: 0, masters: 0, phd: 0, universities: {} }
   };
+  const pendingInformationUpdates = Object.create(null);
+  const scriptProperties = PropertiesService.getScriptProperties().getProperties();
+  Object.keys(scriptProperties).forEach(key => {
+    if (!key.startsWith(LSU_MEMBERSHIP_UPDATE_REVIEW_PREFIX_)) return;
+    const update = JSON.parse(scriptProperties[key]);
+    if (update.status !== "SUBMITTED") return;
+    pendingInformationUpdates[update.appId] = update;
+  });
 
   if (values.length > 1) {
     const headers = values[0].map(h => String(h || "").trim());
@@ -1148,6 +1243,7 @@ function getDashboardData(sessionToken) {
     const idxDegree = findColumnIndex(headers, "Degree Type", "Degree", "Course");
     const idxUni = findColumnIndex(headers, "University", "College", "Institution");
     const idxAppId = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
+    const idxStatus = findColumnIndex(headers, "Application Status", "Status", "Application status");
     const idxPhoto = findColumnIndex(headers, "Identification Photo", "Passport Photo");
 
     for (let i = 1; i < values.length; i++) {
@@ -1166,6 +1262,8 @@ function getDashboardData(sessionToken) {
       }
       
       const type = idxType >= 0 ? String(row[idxType] || "").trim().toUpperCase() : "";
+      const applicationStatus = idxStatus >= 0 ? String(row[idxStatus] || "").trim().toUpperCase() : "";
+      const isConfirmed = applicationStatus === "CONFIRMED" || applicationStatus === "MEMBER_CONFIRMED";
       const gender = idxGender >= 0 ? String(row[idxGender] || "").trim() : "";
       const isMale = (gender.toUpperCase() === "MALE");
       const isFemale = (gender.toUpperCase() === "FEMALE");
@@ -1181,10 +1279,10 @@ function getDashboardData(sessionToken) {
       const uni = rawUni || "Unknown University";
       
       let targetStats = null;
-      if (type.includes("STUDENT")) {
+      if (isConfirmed && type.includes("STUDENT")) {
         targetStats = statistics.currentStudents;
         if (normDegree === "Bachelor") targetStats.bachelorCandidate++;
-      } else if (type.includes("ALUMNI")) {
+      } else if (isConfirmed && type.includes("ALUMNI")) {
         targetStats = statistics.alumni;
         if (normDegree === "Bachelor") targetStats.bachelor++;
       }
@@ -1219,6 +1317,10 @@ function getDashboardData(sessionToken) {
       app['Email'] = extractedEmail;
       app['Applicant Email'] = extractedEmail;
       app['Application ID'] = appId || (idxAppId !== -1 ? row[idxAppId] : '') || ('ROW-' + (i + 1));
+      const pendingUpdate = pendingInformationUpdates[app['Application ID']];
+      app.pendingInformationUpdate = pendingUpdate && extractEmail(pendingUpdate.email) === extractEmail(extractedEmail)
+        ? pendingUpdate
+        : null;
       
       const photoUrl = (idxPhoto !== -1 && row[idxPhoto]) ? row[idxPhoto] : (app['Identification Photo'] || app['Passport Photo'] || '');
       app['Identification Photo'] = photoUrl;
@@ -1234,16 +1336,61 @@ function getDashboardData(sessionToken) {
 /*******************************************************
  * APPLICATION STATUS WORKFLOW
  *******************************************************/
+function lsuNormalizeDocumentRequests_(requestedDocuments, legacyDocType, legacyReason, isStudent) {
+  const allowed = isStudent
+    ? ["EFRO File", "Passport Document", "Identification Photo"]
+    : ["Passport Document", "Identification Photo"];
+  let documents = requestedDocuments;
+  if (!Array.isArray(documents) || !documents.length) {
+    documents = legacyDocType ? [{ docType: legacyDocType, reason: legacyReason }] : [];
+  }
+  if (!documents.length || documents.length > allowed.length) {
+    throw new Error("Select at least one valid document to update.");
+  }
+  const seen = Object.create(null);
+  return documents.map(item => {
+    let docType = String(item && (item.docType || item.document) || "").trim();
+    if (docType === "Passport Photo") docType = "Identification Photo";
+    const reason = String(item && item.reason || "").trim();
+    if (!allowed.includes(docType) || seen[docType]) throw new Error("Select valid, unique documents to update.");
+    if (!reason) throw new Error(`A reason is required for ${docType}.`);
+    if (reason.length > 1000) throw new Error("Document update instructions must be 1000 characters or fewer.");
+    seen[docType] = true;
+    return { docType, reason };
+  });
+}
+
+function lsuDocumentUpdateSummary_(documents) {
+  return documents.map(item => `${item.docType}: ${item.reason}`).join("\n");
+}
+
+function lsuIssueDocumentUpdateLink_(appId, email, documents) {
+  const token = Utilities.getUuid();
+  const expiryTime = new Date(Date.now() + CONFIG.DOC_UPDATE_EXPIRY_HOURS * 60 * 60 * 1000);
+  const tokenKey = "DOC_UPDATE_" + token;
+  PropertiesService.getScriptProperties().setProperty(tokenKey, JSON.stringify({
+    appId,
+    email,
+    documents,
+    docType: documents.length === 1 ? documents[0].docType : "",
+    reason: lsuDocumentUpdateSummary_(documents),
+    createdAt: new Date().toISOString(),
+    expiresAt: expiryTime.toISOString()
+  }));
+  return {
+    tokenKey,
+    token,
+    expiryTime,
+    formattedExpiry: formatExactDateTime(expiryTime),
+    updateLink: `${CONFIG.FRONTEND_UPDATE_URL}?token=${token}`
+  };
+}
+
 function updateApplicationStatus(payload) {
-  const session = requireAdministratorSession(payload.sessionToken);
+  const session = requireAdministratorPermission_(payload.sessionToken, "membership");
   const appId = String(payload.applicationId || "").trim();
   const newStatus = String(payload.newStatus || "").trim().toUpperCase();
   const reason = String(payload.rejectionReason || "").trim();
-  let docType = String(payload.updateDocType || "").trim();
-  
-  if (docType === "Passport Photo") {
-    docType = "Identification Photo";
-  }
   
   const lock = LockService.getScriptLock();
   try {
@@ -1261,6 +1408,7 @@ function updateApplicationStatus(payload) {
     const colStatus = findColumnIndex(headers, "Application Status", "Status", "Application status");
     const colFirstName = findColumnIndex(headers, "First Name", "FirstName", "First name", "Applicant Name", "Name");
     const colLastName = findColumnIndex(headers, "Last Name", "LastName", "Last name", "Surname");
+    const colType = findColumnIndex(headers, "Membership Type", "Type");
     const colReviewDate = findColumnIndex(headers, "Review Date", "Reviewed Date", "Review date");
     const colReviewedBy = findColumnIndex(headers, "Reviewed By", "Reviewer", "Reviewed by");
     const colReason = findColumnIndex(headers, "Rejection Reason", "Reason", "Rejection reason", "Remarks");
@@ -1309,9 +1457,16 @@ function updateApplicationStatus(payload) {
     }
     if (!applicantName) applicantName = "Applicant";
 
+    const isStudent = colType !== -1 && String(targetRowData[colType] || "").toUpperCase().includes("STUDENT");
+    let updateDocuments = [];
     if (newStatus === "NEEDS_CLARIFICATION") {
-      if (!reason || !docType) throw new Error("Document type and reason required for updates.");
       if (!applicantEmail) throw new Error("Applicant email not found. The document update request was not sent.");
+      updateDocuments = lsuNormalizeDocumentRequests_(
+        payload.updateDocuments,
+        payload.updateDocType,
+        reason,
+        isStudent
+      );
     }
     
     if ((newStatus === "CONFIRMED" || newStatus === "MEMBER_CONFIRMED") && applicantEmail.toLowerCase() === session.email.toLowerCase() && !isChiefAdministrator(session.email)) {
@@ -1339,36 +1494,26 @@ function updateApplicationStatus(payload) {
       }
     } 
     else if (newStatus === "NEEDS_CLARIFICATION") {
-      const token = Utilities.getUuid();
-      const expiryTime = new Date(Date.now() + CONFIG.DOC_UPDATE_EXPIRY_HOURS * 60 * 60 * 1000);
-      const formattedExpiry = formatExactDateTime(expiryTime);
-      
-      const tokenKey = 'DOC_UPDATE_' + token;
-      PropertiesService.getScriptProperties().setProperty(tokenKey, JSON.stringify({
-        appId: appId,
-        email: applicantEmail,
-        docType: docType,
-        reason: reason,
-        createdAt: new Date().toISOString(),
-        expiresAt: expiryTime.toISOString()
-      }));
-      
-      const updateLink = `${CONFIG.FRONTEND_UPDATE_URL}?token=${token}`;
-      
+      const link = lsuIssueDocumentUpdateLink_(appId, applicantEmail, updateDocuments);
+      const requestedText = updateDocuments.map(item => `${item.docType}\nReason: ${item.reason}`).join("\n\n");
       const emailSent = sendSecureEmail(
         applicantEmail,
         "LSU Membership Application - Document Update Required (24-Hour Expiry)",
-        `Dear ${applicantName},\n\nYour LSU membership application (${appId}) has been reviewed.\n\nWe need you to update the following document before your application can be processed:\n\nDocument Required: ${docType}\nReason / Instructions: ${reason}\n\nPlease click the secure link below to upload your replacement document:\n${updateLink}\n\nIMPORTANT: This link will expire in 24 hours on ${formattedExpiry}.\n\nYour application will remain under review until the requested document is received.\n\nRegards,\nLiberian Students Union in Odisha`
+        `Dear ${applicantName},\n\nYour LSU membership application (${appId}) has been reviewed.\n\nPlease update the following document${updateDocuments.length === 1 ? "" : "s"} before your application can be processed:\n\n${requestedText}\n\nUse the single secure link below to upload all requested replacements:\n${link.updateLink}\n\nIMPORTANT: This link will expire in 24 hours on ${link.formattedExpiry}.\n\nYour application will remain under review until all requested documents are received.\n\nRegards,\nLiberian Students Union in Odisha`
       );
       if (!emailSent) {
-        PropertiesService.getScriptProperties().deleteProperty(tokenKey);
+        PropertiesService.getScriptProperties().deleteProperty(link.tokenKey);
         throw new Error("The document update request could not be emailed. Please check the email service and try again.");
       }
 
+      PropertiesService.getScriptProperties().setProperty(
+        "DOC_UPDATE_REQUEST_" + appId,
+        JSON.stringify({ appId, email: applicantEmail, documents: updateDocuments })
+      );
       if (colStatus !== -1) sheet.getRange(targetRow, colStatus + 1).setValue(newStatus);
       if (colReviewDate !== -1) sheet.getRange(targetRow, colReviewDate + 1).setValue(new Date());
       if (colReviewedBy !== -1) sheet.getRange(targetRow, colReviewedBy + 1).setValue(session.email);
-      if (colReason !== -1) sheet.getRange(targetRow, colReason + 1).setValue(`Update requested for: ${docType}. Reason: ${reason}`);
+      if (colReason !== -1) sheet.getRange(targetRow, colReason + 1).setValue(`Document update requested:\n${lsuDocumentUpdateSummary_(updateDocuments)}`);
     }
     else if (newStatus === "VERIFICATION_PENDING") {
       const code = "LSU26-" + Math.floor(100000 + Math.random() * 900000);
@@ -1414,7 +1559,7 @@ function updateApplicationStatus(payload) {
  * ADMIN RESEND ACTIONS (24-HOUR EXPIRATION)
  *******************************************************/
 function resendUploadLink(payload) {
-  const session = requireAdministratorSession(payload.sessionToken);
+  const session = requireAdministratorPermission_(payload.sessionToken, "membership");
   const appId = String(payload.applicationId || "").trim();
   
   const sheet = ensureMembersSheet();
@@ -1425,6 +1570,8 @@ function resendUploadLink(payload) {
   const colFirstName = findColumnIndex(headers, "First Name", "FirstName", "Applicant Name", "Name");
   const colLastName = findColumnIndex(headers, "Last Name", "LastName");
   const colReason = findColumnIndex(headers, "Rejection Reason", "Reason", "Rejection reason", "Remarks");
+  const colStatus = findColumnIndex(headers, "Application Status", "Status");
+  const colType = findColumnIndex(headers, "Membership Type", "Type");
   
   let targetRow = -1;
   let targetRowData = null;
@@ -1438,6 +1585,9 @@ function resendUploadLink(payload) {
   }
   
   if (targetRow === -1) throw new Error("Application '" + appId + "' not found.");
+  if (colStatus !== -1 && String(targetRowData[colStatus] || "").trim().toUpperCase() !== "NEEDS_CLARIFICATION") {
+    throw new Error("This application is no longer awaiting a document update.");
+  }
   
   const applicantEmail = findEmailInRow(targetRowData, headers);
   if (!applicantEmail) throw new Error("Applicant email not found.");
@@ -1446,49 +1596,47 @@ function resendUploadLink(payload) {
   const ln = colLastName !== -1 ? String(targetRowData[colLastName] || "").trim() : "";
   const applicantName = (fn + " " + ln).trim() || "Applicant";
   
-  let docType = String(payload.updateDocType || "").trim();
-  let reason = String(payload.rejectionReason || "").trim();
-  
-  if (!docType && colReason !== -1) {
+  const isStudent = colType !== -1 && String(targetRowData[colType] || "").toUpperCase().includes("STUDENT");
+  const savedRequest = PropertiesService.getScriptProperties().getProperty("DOC_UPDATE_REQUEST_" + appId);
+  let savedDocuments = [];
+  if (savedRequest) {
+    const request = JSON.parse(savedRequest);
+    if (extractEmail(request.email) === applicantEmail) savedDocuments = request.documents || [];
+  }
+  if (!savedDocuments.length && colReason !== -1) {
     const existingReason = String(targetRowData[colReason] || "");
-    const match = existingReason.match(/Update requested for:\s*([^.]+)\.\s*Reason:\s*(.*)/i);
-    if (match) {
-      docType = match[1].trim();
-      if (!reason) reason = match[2].trim();
+    const matches = Array.from(existingReason.matchAll(/(?:Update requested for:\s*)?([^:\n]+):\s*([^\n]+)/gi));
+    if (matches.length) {
+      savedDocuments = matches.map(match => ({ docType: match[1].trim(), reason: match[2].trim() }));
+    } else {
+      const legacy = existingReason.match(/Update requested for:\s*([^.]+)\.\s*Reason:\s*(.*)/i);
+      if (legacy) savedDocuments = [{ docType: legacy[1].trim(), reason: legacy[2].trim() }];
     }
   }
-  if (!docType) docType = "Identification Photo";
-  if (!reason) reason = "Please upload an updated document.";
-  if (docType === "Passport Photo") docType = "Identification Photo";
-  
-  const token = Utilities.getUuid();
-  const expiryTime = new Date(Date.now() + CONFIG.DOC_UPDATE_EXPIRY_HOURS * 60 * 60 * 1000);
-  const formattedExpiry = formatExactDateTime(expiryTime);
-  
-  const tokenKey = 'DOC_UPDATE_' + token;
-  PropertiesService.getScriptProperties().setProperty(tokenKey, JSON.stringify({
-    appId: appId,
-    email: applicantEmail,
-    docType: docType,
-    reason: reason,
-    createdAt: new Date().toISOString(),
-    expiresAt: expiryTime.toISOString()
-  }));
-  
-  const updateLink = `${CONFIG.FRONTEND_UPDATE_URL}?token=${token}`;
-  
+  const documents = lsuNormalizeDocumentRequests_(
+    payload.updateDocuments && payload.updateDocuments.length ? payload.updateDocuments : savedDocuments,
+    payload.updateDocType,
+    payload.rejectionReason,
+    isStudent
+  );
+  const link = lsuIssueDocumentUpdateLink_(appId, applicantEmail, documents);
+  const requestedText = documents.map(item => `${item.docType}\nReason: ${item.reason}`).join("\n\n");
   const emailSent = sendSecureEmail(
     applicantEmail,
     "LSU Membership Application - New Document Update Link (24-Hour Expiry)",
-    `Dear ${applicantName},\n\nA new secure document update link has been generated for your LSU membership application (${appId}).\n\nDocument Required: ${docType}\nReason / Instructions: ${reason}\n\nPlease click the link below to upload your document:\n${updateLink}\n\nIMPORTANT: This new link is valid for 24 hours and will expire on ${formattedExpiry}.\n\nRegards,\nLiberian Students Union in Odisha`
+    `Dear ${applicantName},\n\nA new secure document update link has been generated for your LSU membership application (${appId}).\n\nPlease update the following document${documents.length === 1 ? "" : "s"}:\n\n${requestedText}\n\nUse this single link to upload all requested replacements:\n${link.updateLink}\n\nIMPORTANT: This link is valid for 24 hours and will expire on ${link.formattedExpiry}.\n\nRegards,\nLiberian Students Union in Odisha`
   );
   if (!emailSent) {
-    PropertiesService.getScriptProperties().deleteProperty(tokenKey);
+    PropertiesService.getScriptProperties().deleteProperty(link.tokenKey);
     throw new Error("The document update link could not be emailed. Please check the email service and try again.");
   }
   
-  auditAdminAction_(session, "membership_document_update_link_resent", appId, "SUCCESS", "New link issued");
-  return { success: true, message: `New upload link generated and sent. Valid until ${formattedExpiry}.` };
+  PropertiesService.getScriptProperties().setProperty(
+    "DOC_UPDATE_REQUEST_" + appId,
+    JSON.stringify({ appId, email: applicantEmail, documents })
+  );
+  auditAdminAction_(session, "membership_document_update_link_resent", appId, "SUCCESS", `Documents: ${documents.map(item => item.docType).join(", ")}`);
+  return { success: true, message: `New upload link generated and sent. Valid until ${link.formattedExpiry}.` };
 }
 
 function resendVerificationCode(payload) {
@@ -1548,6 +1696,22 @@ function resendVerificationCode(payload) {
 /*******************************************************
  * DOCUMENT UPDATE PORTAL LOGIC
  *******************************************************/
+function lsuDocumentRequestsFromToken_(data, isStudent) {
+  const documents = Array.isArray(data.documents) && data.documents.length
+    ? data.documents
+    : [{ docType: data.docType, reason: data.reason || "Please upload a corrected document." }];
+  return lsuNormalizeDocumentRequests_(documents, "", "", isStudent);
+}
+
+function lsuApplicationDriveFolder_(appId, isStudent) {
+  const folders = DriveApp.getFoldersByName(appId);
+  if (folders.hasNext()) return folders.next();
+  const rootFolder = DriveApp.getFolderById(CONFIG.ROOT_DRIVE_FOLDER_ID);
+  const yearFolder = getOrCreateFolder(rootFolder, new Date().getFullYear().toString());
+  const categoryFolder = getOrCreateFolder(yearFolder, isStudent ? "Current Students" : "Alumni");
+  return getOrCreateFolder(categoryFolder, appId);
+}
+
 function getDocumentUpdateInfo(token) {
   token = String(token || "").trim();
   const dataStr = PropertiesService.getScriptProperties().getProperty('DOC_UPDATE_' + token);
@@ -1562,45 +1726,23 @@ function getDocumentUpdateInfo(token) {
     }
   }
   
-  if (data.docType === "Passport Photo") {
-    data.docType = "Identification Photo";
-  }
-  
-  const sheet = ensureMembersSheet();
-  const values = sheet.getDataRange().getValues();
-  const headers = values[0];
-  const idxId = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
-  const idxStatus = findColumnIndex(headers, "Application Status", "Status");
-  
-  let currentStatus = "";
-  for (let i = 1; i < values.length; i++) {
-    const row = values[i];
-    let isMatch = false;
-    if (idxId !== -1 && String(row[idxId] || "").trim().toUpperCase() === data.appId.toUpperCase()) {
-      isMatch = true;
-    } else {
-      for (let c = 0; c < row.length; c++) {
-        if (String(row[c] || "").trim().toUpperCase() === data.appId.toUpperCase()) {
-          isMatch = true;
-          break;
-        }
-      }
-    }
-    if (isMatch) {
-      currentStatus = idxStatus !== -1 ? String(row[idxStatus]).trim().toUpperCase() : "NEEDS_CLARIFICATION";
-      break;
-    }
-  }
-  
-  if (currentStatus && currentStatus !== "NEEDS_CLARIFICATION") {
+  const record = lsuFindApplicationRecord_(data.appId, data.email);
+  const statusColumn = findColumnIndex(record.headers, "Application Status", "Status");
+  const currentStatus = statusColumn === -1 ? "NEEDS_CLARIFICATION" : String(record.row[statusColumn] || "").trim().toUpperCase();
+  if (currentStatus !== "NEEDS_CLARIFICATION") {
     throw new Error("This application is no longer awaiting a document update.");
   }
+  const typeColumn = findColumnIndex(record.headers, "Membership Type", "Type");
+  const isStudent = typeColumn !== -1 && String(record.row[typeColumn] || "").toUpperCase().includes("STUDENT");
+  const documents = lsuDocumentRequestsFromToken_(data, isStudent);
   
   return {
     success: true,
     appId: data.appId,
-    docType: data.docType,
-    reason: data.reason,
+    kind: "documents",
+    docType: documents.length === 1 ? documents[0].docType : "",
+    documents,
+    reason: lsuDocumentUpdateSummary_(documents),
     expiresAt: data.expiresAt ? formatExactDateTime(new Date(data.expiresAt)) : ""
   };
 }
@@ -1619,13 +1761,31 @@ function submitDocumentUpdate(payload) {
     }
   }
   
-  if (!payload.file || !payload.file.content) throw new Error("No file provided.");
-  
-  let docType = data.docType;
-  if (docType === "Passport Photo") docType = "Identification Photo";
-  
-  const isPhoto = (docType === "Identification Photo" || docType === "Passport Photo");
-  validateFileObject(payload.file, docType, isPhoto ? "IMAGE" : "PDF");
+  const initialRecord = lsuFindApplicationRecord_(data.appId, data.email);
+  const typeColumn = findColumnIndex(initialRecord.headers, "Membership Type", "Type");
+  const isStudent = typeColumn !== -1 && String(initialRecord.row[typeColumn] || "").toUpperCase().includes("STUDENT");
+  const documents = lsuDocumentRequestsFromToken_(data, isStudent);
+  const files = payload.files && typeof payload.files === "object" && !Array.isArray(payload.files)
+    ? payload.files
+    : documents.length === 1 && payload.file
+      ? { [documents[0].docType]: payload.file }
+      : {};
+  const expectedTypes = documents.map(item => item.docType);
+  if (Object.keys(files).some(docType => !expectedTypes.includes(docType))) {
+    throw new Error("The upload contains a document that was not requested.");
+  }
+  let totalBytes = 0;
+  const validatedFiles = documents.map(document => {
+    const file = files[document.docType];
+    if (!file || !file.content) throw new Error(`Please upload ${document.docType}.`);
+    const isPhoto = document.docType === "Identification Photo";
+    const validated = validateFileObject(file, document.docType, isPhoto ? "IMAGE" : "PDF");
+    totalBytes += validated.sizeBytes;
+    return { ...document, file };
+  });
+  if (totalBytes > CONFIG.MAX_TOTAL_UPLOAD_BYTES) {
+    throw new Error("Total document upload size exceeds the maximum limit of 15 MB.");
+  }
   
   const lock = LockService.getScriptLock();
   try {
@@ -1635,84 +1795,382 @@ function submitDocumentUpdate(payload) {
   }
   
   try {
-    const sheet = ensureMembersSheet();
-    const values = sheet.getDataRange().getValues();
-    const headers = values[0].map(h => String(h || "").trim());
-    
-    const idxAppId = findColumnIndex(headers, "Application ID", "Application Id", "ApplicationID", "App ID", "ID");
-    const idxStatus = findColumnIndex(headers, "Application Status", "Status");
-    const idxDoc = findColumnIndex(headers, docType, isPhoto ? "Passport Photo" : docType);
-    
-    if (idxDoc === -1) throw new Error("Document column '" + docType + "' not found in database.");
-    
-    let targetRow = -1;
-    let targetRowData = null;
-    for (let i = 1; i < values.length; i++) {
-      const row = values[i];
-      let isMatch = false;
-      if (idxAppId !== -1 && String(row[idxAppId] || "").trim().toUpperCase() === data.appId.toUpperCase()) {
-        isMatch = true;
-      } else {
-        for (let c = 0; c < row.length; c++) {
-          if (String(row[c] || "").trim().toUpperCase() === data.appId.toUpperCase()) {
-            isMatch = true;
-            break;
-          }
+    const record = lsuFindApplicationRecord_(data.appId, data.email);
+    const statusColumn = findColumnIndex(record.headers, "Application Status", "Status");
+    const currentStatus = statusColumn === -1 ? "NEEDS_CLARIFICATION" : String(record.row[statusColumn] || "").trim().toUpperCase();
+    if (currentStatus !== "NEEDS_CLARIFICATION") throw new Error("This application is no longer awaiting a document update.");
+    const documentColumns = validatedFiles.map(document => {
+      const column = findColumnIndex(record.headers, document.docType, document.docType === "Identification Photo" ? "Passport Photo" : document.docType);
+      if (column === -1) throw new Error(`Document column "${document.docType}" not found in database.`);
+      return { ...document, column, oldUrl: String(record.row[column] || "") };
+    });
+    const appFolder = lsuApplicationDriveFolder_(data.appId, isStudent);
+    const newUrls = documentColumns.map(document => saveFileToDrive(document.file, appFolder));
+    const updatedColumns = [];
+    try {
+      documentColumns.forEach((document, index) => {
+        record.sheet.getRange(record.rowNumber, document.column + 1).setValue(newUrls[index]);
+        updatedColumns.push(document);
+      });
+      if (statusColumn !== -1) record.sheet.getRange(record.rowNumber, statusColumn + 1).setValue("UNDER_REVIEW");
+    } catch (writeError) {
+      let rollbackFailed = false;
+      updatedColumns.reverse().forEach(document => {
+        try {
+          record.sheet.getRange(record.rowNumber, document.column + 1).setValue(document.oldUrl);
+        } catch (rollbackError) {
+          rollbackFailed = true;
         }
-      }
-      if (isMatch) {
-        targetRow = i + 1;
-        targetRowData = row;
-        break;
-      }
+      });
+      if (rollbackFailed) throw new Error("Document updates could not be applied or rolled back. Administrator review is required.");
+      throw writeError;
     }
-    if (targetRow === -1) throw new Error("Application not found.");
-    
-    const idxType = findColumnIndex(headers, "Membership Type", "Type");
-    const isStudent = (idxType !== -1 && String(targetRowData[idxType]).toUpperCase().includes("STUDENT"));
+    documentColumns.forEach(document => archiveOldDocument(document.oldUrl));
 
-    const oldUrl = String(sheet.getRange(targetRow, idxDoc + 1).getValue());
-    archiveOldDocument(oldUrl);
-    
-    let appFolder = null;
-    const folders = DriveApp.getFoldersByName(data.appId);
-    if (folders.hasNext()) {
-      appFolder = folders.next();
-    } else {
-      try {
-        const rootFolder = DriveApp.getFolderById(CONFIG.ROOT_DRIVE_FOLDER_ID);
-        const yearF = getOrCreateFolder(rootFolder, new Date().getFullYear().toString());
-        const catF = getOrCreateFolder(yearF, isStudent ? "Current Students" : "Alumni");
-        appFolder = getOrCreateFolder(catF, data.appId);
-      } catch (e) {
-        const rootFolder = DriveApp.getFolderById(CONFIG.ROOT_DRIVE_FOLDER_ID);
-        appFolder = getOrCreateFolder(rootFolder, data.appId);
-      }
-    }
-    
-    const newUrl = saveFileToDrive(payload.file, appFolder);
-    
-    sheet.getRange(targetRow, idxDoc + 1).setValue(newUrl);
-    if (idxStatus !== -1) {
-      sheet.getRange(targetRow, idxStatus + 1).setValue("UNDER_REVIEW");
-    }
-    
     PropertiesService.getScriptProperties().deleteProperty('DOC_UPDATE_' + token);
+    PropertiesService.getScriptProperties().deleteProperty("DOC_UPDATE_REQUEST_" + data.appId);
     cleanupExpiredTokens_();
     
-    const applicantEmail = extractEmail(data.email) || findEmailInRow(targetRowData, headers);
-    if (applicantEmail) {
-      sendSecureEmail(
-        applicantEmail,
-        "LSU Membership - Document Received",
-        `Dear Applicant,\n\nYour updated document (${docType}) has been successfully received.\nYour application (${data.appId}) has been returned to the administrator for review.\n\nPlease check your email regularly for further updates.\n\nRegards,\nLiberian Students Union in Odisha`
-      );
-    }
-    
-    return { success: true, message: "Document replaced successfully." };
+    const requestedNames = documents.map(document => document.docType).join(", ");
+    sendSecureEmail(
+      record.email,
+      "LSU Membership - Documents Received",
+      `Dear Applicant,\n\nYour updated document${documents.length === 1 ? "" : "s"} (${requestedNames}) ha${documents.length === 1 ? "s" : "ve"} been received.\nYour application (${data.appId}) has been returned to the administrator for review.\n\nPlease check your email regularly for further updates.\n\nRegards,\nLiberian Students Union in Odisha`
+    );
+
+    return { success: true, message: "All requested documents were received and the application was returned for review." };
   } finally {
     lock.releaseLock();
   }
+}
+
+function lsuNormalizeMembershipUpdateValues_(values, fields, isStudent) {
+  if (!values || typeof values !== "object" || Array.isArray(values)) {
+    throw new Error("Update information is invalid.");
+  }
+  const allowedKeys = fields.map(field => field.key);
+  if (new Set(allowedKeys).size !== allowedKeys.length) throw new Error("The requested update fields are invalid.");
+  if (Object.keys(values).some(key => !allowedKeys.includes(key)) ||
+      allowedKeys.some(key => !Object.prototype.hasOwnProperty.call(values, key))) {
+    throw new Error("Submit only the information fields requested by the administrator.");
+  }
+
+  const normalized = {};
+  fields.forEach(requestedField => {
+    const definition = lsuMembershipUpdateFieldDefinition_(requestedField.key, isStudent);
+    if (!definition) throw new Error("The requested update contains an unsupported field.");
+    let value = String(values[definition.key] === undefined || values[definition.key] === null ? "" : values[definition.key]).trim();
+    if (definition.required && !value) throw new Error(`${definition.label} is required.`);
+    if (value.length > 250) throw new Error(`${definition.label} must be 250 characters or fewer.`);
+    if (definition.options && value && !definition.options.includes(value)) {
+      throw new Error(`Select a valid value for ${definition.label}.`);
+    }
+    if (definition.type === "date" && value) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || isNaN(new Date(value + "T00:00:00Z").getTime())) {
+        throw new Error(`Enter a valid date for ${definition.label}.`);
+      }
+      const parts = value.split("-");
+      value = `${parts[1]}/${parts[2]}/${parts[0]}`;
+    }
+    if (definition.type === "year" && value && !/^(19|20)\d{2}$/.test(value)) {
+      throw new Error(`Enter a valid year for ${definition.label}.`);
+    }
+    if (definition.key === "mobileNumber" && value && !/^\+91\d{10}$/.test(value)) {
+      throw new Error("Mobile Number must begin with +91 and contain 10 digits after the country code.");
+    }
+    if ((definition.key === "whatsappNumber" || definition.key === "parentsContact") &&
+        value && !/^\+\d{6,15}$/.test(value)) {
+      throw new Error(`${definition.label} must include a country code.`);
+    }
+    if (definition.key === "passportNumber" && value && !/^[A-Za-z][A-Za-z0-9]*$/.test(value)) {
+      throw new Error("Passport Number must begin with a letter and contain only letters or numbers.");
+    }
+    normalized[definition.key] = value;
+  });
+
+  if (normalized.studyFrom && normalized.studyTo && Number(normalized.studyFrom) > Number(normalized.studyTo)) {
+    throw new Error("Study To must be the same year or later than Study From.");
+  }
+  return normalized;
+}
+
+function requestMembershipInformationUpdate(payload) {
+  const session = requireAdministratorPermission_(payload.sessionToken, "membership");
+  const appId = String(payload.applicationId || "").trim();
+  const record = lsuFindApplicationRecord_(appId);
+  const statusColumn = findColumnIndex(record.headers, "Application Status", "Status");
+  if (statusColumn !== -1 && String(record.row[statusColumn] || "").trim().toUpperCase() === "REJECTED") {
+    throw new Error("Information updates cannot be requested for a rejected application.");
+  }
+  const typeColumn = findColumnIndex(record.headers, "Membership Type", "Type");
+  const isStudent = typeColumn !== -1 && String(record.row[typeColumn] || "").toUpperCase().includes("STUDENT");
+  const availableFields = lsuMembershipUpdateFields_(isStudent);
+  const mode = String(payload.mode || "").trim().toLowerCase();
+  const overallReason = String(payload.reason || "").trim();
+  if (!["selected", "full"].includes(mode)) throw new Error("Choose selected fields or a full form refill.");
+  if (overallReason.length > 1000) throw new Error("The update reason must be 1000 characters or fewer.");
+
+  let requestedFields;
+  if (mode === "full") {
+    requestedFields = availableFields.map(field => ({ ...field, reason: "" }));
+  } else {
+    if (!Array.isArray(payload.fields) || !payload.fields.length) throw new Error("Select at least one information field to update.");
+    const seen = Object.create(null);
+    requestedFields = payload.fields.map(item => {
+      const field = availableFields.find(candidate => candidate.key === String(item && item.key || "").trim());
+      if (!field || seen[field.key]) throw new Error("Select valid, unique information fields to update.");
+      const reason = String(item && item.reason || "").trim();
+      if (reason.length > 500) throw new Error(`The reason for ${field.label} must be 500 characters or fewer.`);
+      if (!overallReason && !reason) throw new Error(`Provide a reason for ${field.label} or a clear overall reason.`);
+      seen[field.key] = true;
+      return { ...field, reason };
+    });
+  }
+  if (mode === "full" && !overallReason) throw new Error("Provide a clear reason for requesting a full form refill.");
+
+  const properties = PropertiesService.getScriptProperties();
+  const allProperties = properties.getProperties();
+  for (const [key, value] of Object.entries(allProperties)) {
+    if (!key.startsWith(LSU_MEMBERSHIP_UPDATE_REVIEW_PREFIX_)) continue;
+    const pending = JSON.parse(value);
+    if (pending.status === "SUBMITTED" && pending.appId === appId && extractEmail(pending.email) === record.email) {
+      throw new Error("An information update for this application is already awaiting review.");
+    }
+  }
+
+  Object.entries(allProperties).forEach(([key, value]) => {
+    if (!key.startsWith(LSU_MEMBERSHIP_UPDATE_TOKEN_PREFIX_)) return;
+    const oldRequest = JSON.parse(value);
+    if (oldRequest.appId === appId) properties.deleteProperty(key);
+  });
+
+  const token = Utilities.getUuid();
+  const expiryTime = new Date(Date.now() + CONFIG.DOC_UPDATE_EXPIRY_HOURS * 60 * 60 * 1000);
+  const tokenKey = LSU_MEMBERSHIP_UPDATE_TOKEN_PREFIX_ + token;
+  const tokenData = {
+    appId,
+    email: record.email,
+    mode,
+    isStudent,
+    reason: overallReason,
+    fields: requestedFields.map(field => ({
+      key: field.key,
+      label: field.label,
+      type: field.type,
+      required: field.required,
+      options: field.options,
+      reason: field.reason
+    })),
+    createdAt: new Date().toISOString(),
+    expiresAt: expiryTime.toISOString()
+  };
+  properties.setProperty(tokenKey, JSON.stringify(tokenData));
+
+  const updateLink = `${CONFIG.FRONTEND_UPDATE_URL}?token=${token}`;
+  const requestSummary = mode === "full"
+    ? `Please refill all membership information fields. Documents will remain unchanged.\nOverall reason: ${overallReason}`
+    : requestedFields.map(field => `${field.label}: ${field.reason || overallReason}`).join("\n");
+  const sent = sendSecureEmail(
+    record.email,
+    "LSU Membership Information Update Requested",
+    `Dear Applicant,\n\nAn administrator has requested an update to your LSU membership information (${appId}).\n\n${requestSummary}\n\nComplete only the requested fields using this secure link:\n${updateLink}\n\nThis link expires in 24 hours. Your existing membership information will remain unchanged until an administrator reviews and approves your submission.\n\nRegards,\nLiberian Students Union in Odisha`
+  );
+  if (!sent) {
+    properties.deleteProperty(tokenKey);
+    throw new Error("The membership information update link could not be emailed. Please try again.");
+  }
+  auditAdminAction_(session, "membership_information_update_requested", appId, "SUCCESS", `${mode} update; fields: ${requestedFields.map(field => field.label).join(", ")}`);
+  return { success: true, message: `Secure information update link sent. It expires ${formatExactDateTime(expiryTime)}.` };
+}
+
+function getMembershipInformationUpdateInfo(token) {
+  token = String(token || "").trim();
+  const key = LSU_MEMBERSHIP_UPDATE_TOKEN_PREFIX_ + token;
+  const properties = PropertiesService.getScriptProperties();
+  const raw = properties.getProperty(key);
+  if (!raw) throw new Error("This membership information update link is invalid or has expired. Contact the LSU administrator.");
+  const data = JSON.parse(raw);
+  if (data.submittedUpdateId) throw new Error("This information update has already been submitted for review.");
+  if (!data.expiresAt || new Date() > new Date(data.expiresAt)) {
+    throw new Error("This membership information update link has expired. Contact the LSU administrator.");
+  }
+  const record = lsuFindApplicationRecord_(data.appId, data.email);
+  const statusColumn = findColumnIndex(record.headers, "Application Status", "Status");
+  if (statusColumn !== -1 && String(record.row[statusColumn] || "").trim().toUpperCase() === "REJECTED") {
+    throw new Error("This application is no longer eligible for an information update.");
+  }
+  return {
+    success: true,
+    kind: "membership",
+    appId: data.appId,
+    mode: data.mode,
+    reason: data.reason,
+    fields: data.fields.map(field => ({
+      key: field.key,
+      label: field.label,
+      type: field.type,
+      required: field.required,
+      options: field.options || [],
+      reason: field.reason || data.reason || ""
+    })),
+    expiresAt: formatExactDateTime(new Date(data.expiresAt))
+  };
+}
+
+function submitMembershipInformationUpdate(payload) {
+  const token = String(payload && payload.token || "").trim();
+  const properties = PropertiesService.getScriptProperties();
+  const tokenKey = LSU_MEMBERSHIP_UPDATE_TOKEN_PREFIX_ + token;
+  const raw = properties.getProperty(tokenKey);
+  if (!raw) throw new Error("This information update link is invalid or has expired.");
+  const data = JSON.parse(raw);
+  if (data.submittedUpdateId) throw new Error("This information update has already been submitted for review.");
+  if (!data.expiresAt || new Date() > new Date(data.expiresAt)) throw new Error("This information update link has expired.");
+  const record = lsuFindApplicationRecord_(data.appId, data.email);
+  const statusColumn = findColumnIndex(record.headers, "Application Status", "Status");
+  if (statusColumn !== -1 && String(record.row[statusColumn] || "").trim().toUpperCase() === "REJECTED") {
+    throw new Error("This application is no longer eligible for an information update.");
+  }
+  const values = lsuNormalizeMembershipUpdateValues_(payload.values, data.fields, data.isStudent);
+  const submissionId = Utilities.getUuid();
+  const review = {
+    id: submissionId,
+    appId: data.appId,
+    email: data.email,
+    mode: data.mode,
+    isStudent: data.isStudent,
+    reason: data.reason,
+    fields: data.fields.map(field => ({ key: field.key, label: field.label, reason: field.reason || "" })),
+    values,
+    status: "SUBMITTED",
+    submittedAt: new Date().toISOString()
+  };
+  const serializedReview = JSON.stringify(review);
+  if (serializedReview.length > 8000) {
+    throw new Error("The submitted update is too large to process. Shorten the responses or request selected fields.");
+  }
+
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(30000);
+  } catch (e) {
+    throw publicError_("Server is busy. Please retry.");
+  }
+  try {
+    const latestToken = properties.getProperty(tokenKey);
+    if (!latestToken) throw new Error("This information update link is invalid or has expired.");
+    const latestData = JSON.parse(latestToken);
+    if (latestData.submittedUpdateId) throw new Error("This information update has already been submitted for review.");
+    properties.setProperty(LSU_MEMBERSHIP_UPDATE_REVIEW_PREFIX_ + submissionId, serializedReview);
+    latestData.submittedUpdateId = submissionId;
+    properties.setProperty(tokenKey, JSON.stringify(latestData));
+  } finally {
+    lock.releaseLock();
+  }
+
+  sendSecureEmail(
+    data.email,
+    "LSU Membership Information Update Received",
+    `Your requested membership information update (${data.appId}) has been received and is awaiting administrator review. Your existing membership information has not yet been changed.`
+  );
+  return { success: true, message: "Your information was submitted for administrator review. Existing membership information has not been changed." };
+}
+
+function reviewMembershipInformationUpdate(payload) {
+  const session = requireAdministratorPermission_(payload && payload.sessionToken, "membership");
+  const updateId = String(payload && payload.updateId || "").trim();
+  const decision = String(payload && payload.decision || "").trim().toUpperCase();
+  const rejectionReason = String(payload && payload.reason || "").trim();
+  if (!updateId || !["APPROVE", "REJECT"].includes(decision)) throw new Error("A valid update and review decision are required.");
+  if (decision === "REJECT" && !rejectionReason) throw new Error("A reason is required to reject the information update.");
+  const properties = PropertiesService.getScriptProperties();
+  const key = LSU_MEMBERSHIP_UPDATE_REVIEW_PREFIX_ + updateId;
+  const raw = properties.getProperty(key);
+  if (!raw) throw new Error("This information update was not found.");
+  const review = JSON.parse(raw);
+  if (review.status !== "SUBMITTED") throw new Error("This information update has already been reviewed.");
+
+  const audit = beginAdminAudit_(
+    session,
+    "membership_information_update_" + decision.toLowerCase(),
+    review.appId,
+    `Fields: ${review.fields.map(field => field.label).join(", ")}`
+  );
+  if (decision === "REJECT") {
+    review.status = "REJECTED";
+    review.reviewedAt = new Date().toISOString();
+    review.reviewedBy = session.email;
+    review.reviewReason = rejectionReason.slice(0, 1000);
+    properties.setProperty(key, JSON.stringify(review));
+    const audited = finishAdminAudit_(audit, "SUCCESS", `Rejected update for fields: ${review.fields.map(field => field.label).join(", ")}`);
+    sendSecureEmail(
+      review.email,
+      "LSU Membership Information Update Needs Revision",
+      `Your information update for application ${review.appId} was not approved.\n\nReason: ${review.reviewReason}\n\nYour existing membership information remains unchanged. Please contact the LSU administrator for next steps.`
+    );
+    return auditResult_({ success: true, message: "Information update rejected; existing member information was not changed." }, audited);
+  }
+
+  const record = lsuFindApplicationRecord_(review.appId, review.email);
+  const definitions = review.fields.map(field => {
+    const definition = lsuMembershipUpdateFieldDefinition_(field.key, review.isStudent);
+    if (!definition) throw new Error("The submitted update contains an unsupported field.");
+    return definition;
+  });
+  const approvedValues = lsuNormalizeMembershipUpdateValues_(review.values, definitions, review.isStudent);
+  const changes = definitions.map(definition => {
+    const column = findColumnIndex(record.headers, definition.column);
+    if (column === -1) throw new Error(`The ${definition.label} column is unavailable.`);
+    return {
+      column,
+      key: definition.key,
+      previousValue: record.row[column],
+      value: approvedValues[definition.key]
+    };
+  });
+  const previousValues = {};
+  changes.forEach(change => {
+    previousValues[change.key] = change.previousValue instanceof Date
+      ? change.previousValue.toISOString()
+      : String(change.previousValue || "");
+  });
+  review.status = "APPROVAL_IN_PROGRESS";
+  review.reviewedBy = session.email;
+  review.reviewedAt = new Date().toISOString();
+  review.previousValues = previousValues;
+  properties.setProperty(key, JSON.stringify(review));
+
+  const written = [];
+  try {
+    changes.forEach(change => {
+      record.sheet.getRange(record.rowNumber, change.column + 1).setValue(change.value);
+      written.push(change);
+    });
+  } catch (writeError) {
+    let rollbackFailed = false;
+    written.reverse().forEach(change => {
+      try {
+        record.sheet.getRange(record.rowNumber, change.column + 1).setValue(change.previousValue);
+      } catch (rollbackError) {
+        rollbackFailed = true;
+      }
+    });
+    review.status = rollbackFailed ? "REVIEW_ERROR" : "SUBMITTED";
+    properties.setProperty(key, JSON.stringify(review));
+    if (rollbackFailed) throw new Error("The information update could not be applied or rolled back. Administrator review is required.");
+    throw writeError;
+  }
+
+  review.status = "APPROVED";
+  review.approvedAt = new Date().toISOString();
+  properties.setProperty(key, JSON.stringify(review));
+  const audited = finishAdminAudit_(audit, "SUCCESS", `Approved fields: ${definitions.map(field => field.label).join(", ")}; prior values retained in update history.`);
+  sendSecureEmail(
+    review.email,
+    "LSU Membership Information Update Approved",
+    `Your information update for application ${review.appId} has been reviewed and approved. The requested membership information has been updated.`
+  );
+  return auditResult_({ success: true, message: "Information update approved and applied." }, audited);
 }
 
 /*******************************************************
@@ -2293,11 +2751,7 @@ function lsuPaymentMethod_(method) {
 
 function lsuPaymentId_() {
   const year = new Date().getFullYear();
-  const sheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, [
-    "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
-    "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
-    "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
-  ]);
+  const sheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, LSU_PAYMENT_HEADERS_);
   return "PAY-" + year + "-" + Utilities.formatString("%04d", Math.max(1, sheet.getLastRow()));
 }
 
@@ -2370,11 +2824,7 @@ function submitDuePayment(payload) {
   }
 
   try {
-    const paymentSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, [
-      "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
-      "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
-      "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
-    ]);
+    const paymentSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, LSU_PAYMENT_HEADERS_);
     const allocationSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME, [
       "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status"
     ]);
@@ -2463,6 +2913,7 @@ function getEvents(payload) {
   const eventData = eventSheet ? eventSheet.getDataRange().getValues() : [];
   const allocData = allocSheet ? allocSheet.getDataRange().getValues() : [];
   const allocationColumns = lsuAllocationColumns_(allocSheet);
+  const paymentStatuses = lsuEventPaymentStatusMap_();
 
   const events = [];
 
@@ -2496,9 +2947,10 @@ function getEvents(payload) {
       const aType = String(lsuAllocationValue_(aRow, allocationColumns, "allocationType", "DUES")).trim().toUpperCase();
       const aEventId = String(lsuAllocationValue_(aRow, allocationColumns, "eventId", "")).trim();
       const aStatus = String(lsuAllocationValue_(aRow, allocationColumns, "receiptStatus", "")).trim().toUpperCase();
+      const aPaymentId = String(lsuAllocationValue_(aRow, allocationColumns, "paymentId", "")).trim();
       const aEmail = extractEmail(lsuAllocationValue_(aRow, allocationColumns, "memberEmail", ""));
       const aAmount = Number(lsuAllocationValue_(aRow, allocationColumns, "amount", 0) || 0);
-      if (aType === "CONTRIBUTION" && aEventId === eventId) {
+      if (aType === "CONTRIBUTION" && aEventId === eventId && paymentStatuses[aPaymentId] === aStatus) {
         if (aStatus === "PAID / VERIFIED") {
           totalCollected += aAmount;
           verifiedContributors++;
@@ -2528,7 +2980,7 @@ function getEvents(payload) {
     }
 
     const myBalance = memberEmail && isEligible
-      ? lsuEventMemberBalance_(allocData, allocationColumns, eventId, memberEmail, requiredAmount)
+      ? lsuEventMemberBalance_(allocData, allocationColumns, eventId, memberEmail, requiredAmount, paymentStatuses)
       : {
         requiredAmount,
         approvedAmount: 0,
@@ -2605,6 +3057,7 @@ function getEventMemberBalance(payload) {
   const allocationSheet = ss.getSheetByName(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME);
   const allocationColumns = lsuAllocationColumns_(allocationSheet);
   const allocationRows = allocationSheet.getDataRange().getValues();
+  const paymentStatuses = lsuEventPaymentStatusMap_();
   const eventId = String(payload.eventId || "").trim();
   let event = null;
   for (let i = 1; i < events.length; i++) {
@@ -2625,7 +3078,7 @@ function getEventMemberBalance(payload) {
   const member = lsuFindMemberByEmail_(targetEmail);
   if (!member || !member.fullMember) throw publicError_("This email is not associated with a registered full LSU member.");
   const requiredAmount = lsuRequiredEventAmount_(event, member);
-  const balance = lsuEventMemberBalance_(allocationRows, allocationColumns, eventId, member.email, requiredAmount);
+  const balance = lsuEventMemberBalance_(allocationRows, allocationColumns, eventId, member.email, requiredAmount, paymentStatuses);
   return {
     success: true,
     eventId,
@@ -2864,11 +3317,7 @@ function submitContributionPayment(payload) {
 
   try {
     ensurePaymentSheets();
-    const paymentSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, [
-      "Payment ID","Payer","Payer Email","Payment Method","Total Amount",
-      "Payment Date","UPI Ref No.","Cash Receiver Name","Cash Receiver Position",
-      "Status","Submitted Date","Approved Date","Approved By","Receipt ID","Rejection Reason"
-    ]);
+    const paymentSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.PAYMENT_SHEET_NAME, LSU_PAYMENT_HEADERS_);
     const requestIdColumn = lsuPaymentRequestIdColumn_(paymentSheet);
     const allocationSheet = lsuPaymentSheet_(LSU_PAYMENT_CONFIG.ALLOCATION_SHEET_NAME, [
       "Payment ID","Member Email","Member Name","Membership ID","Amount","Receipt Status",
@@ -2899,6 +3348,7 @@ function submitContributionPayment(payload) {
     }
 
     const allocData = allocationSheet.getDataRange().getValues();
+    const paymentStatuses = lsuEventPaymentStatusMap_();
     if (requestId) {
       const paymentData = paymentSheet.getDataRange().getValues();
       for (let i = 1; i < paymentData.length; i++) {
@@ -2997,7 +3447,7 @@ function submitContributionPayment(payload) {
         }
       }
 
-      const balance = lsuEventMemberBalance_(allocData, allocationColumns, eventId, email, requiredFee);
+      const balance = lsuEventMemberBalance_(allocData, allocationColumns, eventId, email, requiredFee, paymentStatuses);
       const amount = item && item.amount !== undefined && item.amount !== null && String(item.amount).trim() !== ""
         ? lsuValidateEventAmount_(item.amount, "Installment amount")
         : balance.availableAmount;
@@ -3727,6 +4177,8 @@ function doPost(e) {
     if (action === "getDashboardData") return jsonResponse(getDashboardData(payload.sessionToken));
     if (action === "updateApplicationStatus") return jsonResponse(updateApplicationStatus(payload));
     if (action === "resendUploadLink" || action === "resendDocumentUpdateLink") return jsonResponse(resendUploadLink(payload));
+    if (action === "requestMembershipInformationUpdate") return jsonResponse(requestMembershipInformationUpdate(payload));
+    if (action === "reviewMembershipInformationUpdate") return jsonResponse(reviewMembershipInformationUpdate(payload));
     if (action === "resendVerificationCode") return jsonResponse(resendVerificationCode(payload));
     if (action === "getAdministrators") return jsonResponse(getAdministrators(payload.sessionToken));
     if (action === "getAdministratorAuditLog") return jsonResponse(getAdministratorAuditLog(payload.sessionToken));
@@ -3744,6 +4196,8 @@ function doPost(e) {
     // Applicant Document Update Actions
     if (action === "getDocumentUpdateInfo") return jsonResponse(getDocumentUpdateInfo(payload.token));
     if (action === "submitDocumentUpdate") return jsonResponse(submitDocumentUpdate(payload));
+    if (action === "getMembershipInformationUpdateInfo") return jsonResponse(getMembershipInformationUpdateInfo(payload.token));
+    if (action === "submitMembershipInformationUpdate") return jsonResponse(submitMembershipInformationUpdate(payload));
 
     // LSU DUES PAYMENT ROUTES
     if (action === "sendDueOTP") return jsonResponse(sendDueOTP(payload.email));

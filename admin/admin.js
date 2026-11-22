@@ -8,6 +8,27 @@ let currentAdminRole = sessionStorage.getItem('adminRole') || null;
 let currentAdminName = sessionStorage.getItem('adminName') || null;
 let cachedApplications = [];
 let cachedAdministrators = [];
+const MEMBERSHIP_UPDATE_FIELDS = [
+    { key: 'firstName', label: 'First Name' },
+    { key: 'middleName', label: 'Middle Name' },
+    { key: 'lastName', label: 'Last Name' },
+    { key: 'gender', label: 'Gender' },
+    { key: 'dateOfBirth', label: 'Date of Birth' },
+    { key: 'positionRole', label: 'Position / Role' },
+    { key: 'whatsappNumber', label: 'WhatsApp Number' },
+    { key: 'mobileNumber', label: 'Mobile Number' },
+    { key: 'passportNumber', label: 'Passport Number' },
+    { key: 'collegeRegistrationNumber', label: 'College Registration Number', studentOnly: true },
+    { key: 'university', label: 'University' },
+    { key: 'degreeType', label: 'Degree Type' },
+    { key: 'studyFrom', label: 'Study From' },
+    { key: 'studyTo', label: 'Study To' },
+    { key: 'fieldOfStudies', label: 'Field of Studies' },
+    { key: 'motherName', label: "Mother's Name", studentOnly: true },
+    { key: 'fatherName', label: "Father's Name", studentOnly: true },
+    { key: 'parentsContact', label: "Parents' Contact", studentOnly: true },
+    { key: 'graduationDate', label: 'Date of Graduation', alumniOnly: true }
+];
 
 // DOM Elements - Login
 const loginView = document.getElementById('login-view');
@@ -150,6 +171,9 @@ function setupEventListeners() {
 
     // Update Request Modal
     document.getElementById('btn-submit-update-request').addEventListener('click', handleSubmitUpdateRequest);
+    document.getElementById('update-doc-mode').addEventListener('change', renderDocumentUpdateOptions);
+    document.getElementById('update-info-mode').addEventListener('change', renderInformationUpdateOptions);
+    document.getElementById('btn-submit-information-update').addEventListener('click', handleSubmitInformationUpdate);
 
     // Reject Application Modal
     document.getElementById('btn-submit-reject').addEventListener('click', handleSubmitReject);
@@ -763,6 +787,25 @@ function openAppDetail(appId) {
     }
     content.appendChild(documents);
 
+    const pendingUpdate = app.pendingInformationUpdate;
+    if (pendingUpdate) {
+        content.appendChild(makeElement('h4', '', 'Information Update Awaiting Review'));
+        content.appendChild(makeElement('p', '', `Submitted: ${pendingUpdate.submittedAt || 'Unknown'}`));
+        if (pendingUpdate.reason) content.appendChild(makeElement('p', '', `Overall reason: ${pendingUpdate.reason}`));
+        const proposed = makeElement('div', 'detail-grid');
+        (pendingUpdate.fields || []).forEach(field => {
+            const value = pendingUpdate.values && Object.prototype.hasOwnProperty.call(pendingUpdate.values, field.key)
+                ? pendingUpdate.values[field.key]
+                : '';
+            const item = makeElement('div', 'detail-item');
+            item.appendChild(makeElement('div', 'detail-label', field.label));
+            item.appendChild(makeElement('div', 'detail-value', value || ''));
+            if (field.reason) item.appendChild(makeElement('div', 'detail-label', `Reason: ${field.reason}`));
+            proposed.appendChild(item);
+        });
+        content.appendChild(proposed);
+    }
+
     const actions = document.getElementById('app-detail-actions');
     actions.replaceChildren();
     const makeActionButton = (label, className, handler, iconClass) => {
@@ -785,26 +828,31 @@ function openAppDetail(appId) {
     const isOwnApp = String(app.email || '').toLowerCase() === String(currentAdminEmail || '').toLowerCase();
     if (!isOwnApp || currentAdminRole === 'CHIEF_ADMINISTRATOR') {
         const status = (app.status || '').toUpperCase();
+        if (pendingUpdate && pendingUpdate.status === 'SUBMITTED') {
+            makeActionButton('Approve Information Update', 'primary-btn', () => reviewMembershipInformationUpdate(pendingUpdate.id, 'APPROVE'));
+            const rejectUpdate = makeActionButton('Reject Information Update', 'secondary-btn', () => reviewMembershipInformationUpdate(pendingUpdate.id, 'REJECT'));
+            rejectUpdate.style.color = 'var(--danger)';
+            rejectUpdate.style.borderColor = 'var(--danger)';
+        }
         if (status === 'UNDER_REVIEW') {
             makeActionButton('Request Document Update', 'secondary-btn', openUpdateRequestModal);
             const rejectButton = makeActionButton('Reject', 'secondary-btn', openRejectModal);
             rejectButton.style.color = 'var(--danger)';
             rejectButton.style.borderColor = 'var(--danger)';
             makeActionButton('Approve & Send OTP', 'primary-btn', () => updateAppStatus('VERIFICATION_PENDING'));
-            addCloseButton();
         } else if (status === 'VERIFICATION_PENDING') {
             const resendButton = makeActionButton('Resend Verification Code', 'secondary-btn', () => resendVerificationCode(app.id), 'fa-solid fa-rotate-right');
             resendButton.style.color = 'var(--primary)';
             resendButton.style.borderColor = 'var(--primary)';
-            addCloseButton();
         } else if (status === 'NEEDS_CLARIFICATION') {
             const resendButton = makeActionButton('Resend Upload Link', 'secondary-btn', () => resendUploadLink(app.id), 'fa-solid fa-rotate-right');
             resendButton.style.color = 'var(--primary)';
             resendButton.style.borderColor = 'var(--primary)';
-            addCloseButton();
-        } else {
-            addCloseButton();
         }
+        if (status !== 'REJECTED' && (!pendingUpdate || pendingUpdate.status !== 'SUBMITTED')) {
+            makeActionButton('Request Information Update', 'secondary-btn', openMembershipInformationUpdateModal);
+        }
+        addCloseButton();
     } else {
         const restriction = makeElement('span', '', 'You cannot approve your own application.');
         restriction.style.color = 'var(--text-light)';
@@ -816,11 +864,12 @@ function openAppDetail(appId) {
     document.getElementById('modal-app-detail').classList.add('active');
 }
 
-async function updateAppStatus(newStatus, reason = '', docType = '') {
+async function updateAppStatus(newStatus, reason = '', documents = []) {
     if (!confirm(`Are you sure you want to change status to ${newStatus}?`)) return;
 
     document.getElementById('modal-app-detail').classList.remove('active');
     document.getElementById('modal-request-update').classList.remove('active');
+    document.getElementById('modal-request-information-update').classList.remove('active');
     document.getElementById('modal-reject-reason').classList.remove('active');
 
     const applicantEmail = currentAppInModal ? (currentAppInModal.email || currentAppInModal['Applicant Email'] || currentAppInModal['Email'] || currentAppInModal['Email Address'] || currentAppInModal['Untitled Question'] || '') : '';
@@ -833,7 +882,8 @@ async function updateAppStatus(newStatus, reason = '', docType = '') {
             applicationId: currentAppInModal ? (currentAppInModal.id || currentAppInModal['Application ID']) : '',
             newStatus: newStatus,
             rejectionReason: reason,
-            updateDocType: docType,
+            updateDocuments: documents,
+            updateDocType: documents.length === 1 ? documents[0].docType : '',
             applicantEmail: applicantEmail,
             applicantName: applicantName
         });
@@ -904,31 +954,189 @@ function handleSubmitReject() {
 
 function openUpdateRequestModal() {
     document.getElementById('modal-app-detail').classList.remove('active');
-    document.getElementById('update-doc-reason').value = '';
-
-    const select = document.getElementById('update-doc-type');
-    const membershipType = String(currentAppInModal?.type || '').trim().toUpperCase();
-    const isCurrentStudent = membershipType.includes('STUDENT');
-    const efroOption = Array.from(select.options).find(option => option.value === 'EFRO File');
-    if (efroOption) {
-        efroOption.disabled = !isCurrentStudent;
-        efroOption.hidden = !isCurrentStudent;
-    }
-    if (!isCurrentStudent && select.value === 'EFRO File') {
-        select.value = 'Passport Document';
-    }
-
+    document.getElementById('update-doc-mode').value = 'single';
+    renderDocumentUpdateOptions();
     document.getElementById('modal-request-update').classList.add('active');
 }
 
+function renderDocumentUpdateOptions() {
+    const container = document.getElementById('update-doc-options');
+    if (!container) return;
+    container.replaceChildren();
+    const isStudent = String(currentAppInModal?.type || '').toUpperCase().includes('STUDENT');
+    const documents = [
+        ...(isStudent ? ['EFRO File'] : []),
+        'Passport Document',
+        'Identification Photo'
+    ];
+    documents.forEach((docType, index) => {
+        const group = document.createElement('div');
+        group.className = 'form-group admin-update-option';
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = 'requested-document';
+        checkbox.value = docType;
+        checkbox.addEventListener('change', () => {
+            if (document.getElementById('update-doc-mode').value !== 'single' || !checkbox.checked) return;
+            container.querySelectorAll('input[name="requested-document"]').forEach(input => {
+                if (input !== checkbox) input.checked = false;
+            });
+        });
+        label.append(checkbox, document.createTextNode(` ${docType}`));
+        const reasonLabel = document.createElement('label');
+        reasonLabel.textContent = 'Reason / Instructions';
+        reasonLabel.htmlFor = `update-doc-reason-${index}`;
+        const reason = document.createElement('textarea');
+        reason.id = `update-doc-reason-${index}`;
+        reason.className = 'admin-input';
+        reason.rows = 2;
+        reason.maxLength = 1000;
+        reason.placeholder = 'Explain what needs correction for this document.';
+        group.append(label, reasonLabel, reason);
+        container.appendChild(group);
+    });
+}
+
 function handleSubmitUpdateRequest() {
-    const docType = document.getElementById('update-doc-type').value;
-    const reason = document.getElementById('update-doc-reason').value.trim();
-    if (!reason) {
-        alert('Please provide instructions/reason.');
+    const container = document.getElementById('update-doc-options');
+    const selected = Array.from(container.querySelectorAll('input[name="requested-document"]:checked'));
+    const mode = document.getElementById('update-doc-mode').value;
+    if (!selected.length || (mode === 'single' && selected.length !== 1)) {
+        alert('Select one document, or choose Multiple Documents and select at least one.');
         return;
     }
-    updateAppStatus('NEEDS_CLARIFICATION', reason, docType);
+    const documents = selected.map(input => ({
+        docType: input.value,
+        reason: document.getElementById(`update-doc-reason-${Array.from(container.querySelectorAll('input[name="requested-document"]')).indexOf(input)}`).value.trim()
+    }));
+    if (documents.some(item => !item.reason)) {
+        alert('Provide a reason for every selected document.');
+        return;
+    }
+    updateAppStatus('NEEDS_CLARIFICATION', '', documents);
+}
+
+function openMembershipInformationUpdateModal() {
+    document.getElementById('modal-app-detail').classList.remove('active');
+    document.getElementById('update-info-mode').value = 'selected';
+    document.getElementById('update-info-overall-reason').value = '';
+    renderInformationUpdateOptions();
+    document.getElementById('modal-request-information-update').classList.add('active');
+}
+
+function renderInformationUpdateOptions() {
+    const container = document.getElementById('update-info-options');
+    if (!container) return;
+    container.replaceChildren();
+    const mode = document.getElementById('update-info-mode').value;
+    const membershipType = String(currentAppInModal?.type || '').toUpperCase();
+    const isStudent = membershipType.includes('STUDENT');
+    const fields = MEMBERSHIP_UPDATE_FIELDS.filter(field =>
+        !(field.studentOnly && !isStudent) && !(field.alumniOnly && isStudent)
+    );
+    if (mode === 'full') {
+        const summary = document.createElement('p');
+        summary.textContent = `The member will refill all ${fields.length} information fields for this membership type. Documents will remain unchanged.`;
+        container.appendChild(summary);
+        fields.forEach(field => {
+            const item = document.createElement('div');
+            item.className = 'admin-update-field-summary';
+            item.textContent = field.label;
+            container.appendChild(item);
+        });
+        return;
+    }
+
+    fields.forEach((field, index) => {
+        const group = document.createElement('div');
+        group.className = 'form-group admin-update-option';
+        const label = document.createElement('label');
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.name = 'requested-info-field';
+        checkbox.value = field.key;
+        label.append(checkbox, document.createTextNode(` ${field.label}`));
+        const reasonLabel = document.createElement('label');
+        reasonLabel.textContent = 'Reason (or use the overall reason above)';
+        reasonLabel.htmlFor = `update-info-reason-${index}`;
+        const reason = document.createElement('textarea');
+        reason.id = `update-info-reason-${index}`;
+        reason.className = 'admin-input';
+        reason.rows = 2;
+        reason.maxLength = 500;
+        group.append(label, reasonLabel, reason);
+        container.appendChild(group);
+    });
+}
+
+async function handleSubmitInformationUpdate() {
+    if (!currentAppInModal) return;
+    const mode = document.getElementById('update-info-mode').value;
+    const reason = document.getElementById('update-info-overall-reason').value.trim();
+    const fields = mode === 'full'
+        ? []
+        : Array.from(document.querySelectorAll('#update-info-options input[name="requested-info-field"]:checked')).map(input => {
+            const all = Array.from(document.querySelectorAll('#update-info-options input[name="requested-info-field"]'));
+            const index = all.indexOf(input);
+            return {
+                key: input.value,
+                reason: document.getElementById(`update-info-reason-${index}`).value.trim()
+            };
+        });
+    if (mode === 'full' && !reason) {
+        alert('Provide a clear reason for requesting a full form refill.');
+        return;
+    }
+    if (mode === 'selected' && !fields.length) {
+        alert('Select at least one information field.');
+        return;
+    }
+    if (mode === 'selected' && !reason && fields.some(field => !field.reason)) {
+        alert('Provide a reason for each selected field or enter an overall reason.');
+        return;
+    }
+    try {
+        const res = await sendBackendRequest({
+            action: 'requestMembershipInformationUpdate',
+            sessionToken: currentSessionToken,
+            applicationId: currentAppInModal.id || currentAppInModal['Application ID'],
+            mode,
+            fields,
+            reason
+        });
+        if (!res.success) throw new Error(res.message || 'Unable to send the update link.');
+        document.getElementById('modal-request-information-update').classList.remove('active');
+        alert(res.message || 'Secure information update link sent.');
+        loadDashboardData();
+    } catch (error) {
+        alert(error.message || 'Unable to send the information update link.');
+    }
+}
+
+async function reviewMembershipInformationUpdate(updateId, decision) {
+    if (!updateId) return;
+    let reason = '';
+    if (decision === 'REJECT') {
+        reason = window.prompt('Reason for rejecting this information update:') || '';
+        if (!reason.trim()) return;
+    } else if (!confirm('Approve these requested membership information changes?')) {
+        return;
+    }
+    try {
+        const res = await sendBackendRequest({
+            action: 'reviewMembershipInformationUpdate',
+            sessionToken: currentSessionToken,
+            updateId,
+            decision,
+            reason
+        });
+        if (!res.success) throw new Error(res.message || 'Unable to review the update.');
+        alert(res.message || 'Information update reviewed.');
+        loadDashboardData();
+    } catch (error) {
+        alert(error.message || 'Unable to review the information update.');
+    }
 }
 
 async function handleSyncEmails() {

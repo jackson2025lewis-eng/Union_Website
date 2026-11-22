@@ -76,6 +76,21 @@ body {
     background: #fdfdfd;
 }
 
+.field-reason {
+    display: block;
+    margin-top: 6px;
+    color: var(--text);
+    text-align: left;
+}
+
+#membership-update-fields input,
+#membership-update-fields select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+}
+
 .view-state {
     display: none;
 }
